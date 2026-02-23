@@ -17,10 +17,10 @@ All components must be available in `PATH`:
 
 | Component | Role |
 |---|---|
-| [amem](https://github.com/yuiseki/amem) | Memory — Markdown-based local context store |
-| [abeat](https://github.com/yuiseki/abeat) | Heartbeat — periodic job runner |
-| [acomm](https://github.com/yuiseki/acomm) | Communication — TUI + Unix socket bridge |
-| [acore](https://github.com/yuiseki/acore) | Core — AI CLI orchestration library |
+| [amem](https://github.com/yuiseki/amem) | Agentic Memory — Markdown-based local context store |
+| [abeat](https://github.com/yuiseki/abeat) | Agentic Heartbeat — periodic job runner |
+| [acomm](https://github.com/yuiseki/acomm) | Agentic Communication — TUI + Unix socket bridge |
+| [acore](https://github.com/yuiseki/acore) | Agent Core — AI CLI orchestration library |
 
 At least one of `acomm-tui` (TypeScript, preferred) or `acomm` (Rust fallback) must be in `PATH` for the TUI.
 
