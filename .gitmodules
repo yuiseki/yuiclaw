@@ -1,0 +1,12 @@
+[submodule "deps/acore"]
+	path = deps/acore
+	url = https://github.com/yuiseki/acore
+[submodule "deps/amem"]
+	path = deps/amem
+	url = https://github.com/yuiseki/amem
+[submodule "deps/abeat"]
+	path = deps/abeat
+	url = https://github.com/yuiseki/abeat
+[submodule "deps/acomm"]
+	path = deps/acomm
+	url = https://github.com/yuiseki/acomm
