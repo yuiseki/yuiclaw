@@ -19,6 +19,30 @@ pub enum Commands {
         #[arg(short, long, default_value = "gemini")]
         tool: String,
     },
+    /// Gemini プロバイダーで起動する (前回セッションがある場合は復元)
+    Gemini {
+        /// 既存セッションを破棄して新しいセッションで起動する
+        #[arg(long)]
+        new: bool,
+    },
+    /// Claude プロバイダーで起動する (前回セッションがある場合は復元)
+    Claude {
+        /// 既存セッションを破棄して新しいセッションで起動する
+        #[arg(long)]
+        new: bool,
+    },
+    /// Codex プロバイダーで起動する (前回セッションがある場合は復元)
+    Codex {
+        /// 既存セッションを破棄して新しいセッションで起動する
+        #[arg(long)]
+        new: bool,
+    },
+    /// OpenCode プロバイダーで起動する (前回セッションがある場合は復元)
+    Opencode {
+        /// 既存セッションを破棄して新しいセッションで起動する
+        #[arg(long)]
+        new: bool,
+    },
     /// acomm bridge を停止する
     Stop,
     /// 全コンポーネントのステータスを表示する

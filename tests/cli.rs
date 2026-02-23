@@ -121,3 +121,69 @@ fn test_start_subcommand_help() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("tool"), "start help should mention --tool");
 }
+
+// --- Provider shorthand subcommand tests ---
+
+#[test]
+fn test_gemini_subcommand_exists() {
+    let output = yuiclaw_bin()
+        .arg("gemini")
+        .arg("--help")
+        .output()
+        .expect("failed to run yuiclaw gemini --help");
+    assert!(output.status.success(), "yuiclaw gemini --help should exit 0");
+}
+
+#[test]
+fn test_gemini_subcommand_has_new_flag() {
+    let output = yuiclaw_bin()
+        .arg("gemini")
+        .arg("--help")
+        .output()
+        .expect("failed to run yuiclaw gemini --help");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("new"), "gemini help should mention --new flag");
+}
+
+#[test]
+fn test_claude_subcommand_exists() {
+    let output = yuiclaw_bin()
+        .arg("claude")
+        .arg("--help")
+        .output()
+        .expect("failed to run yuiclaw claude --help");
+    assert!(output.status.success(), "yuiclaw claude --help should exit 0");
+}
+
+#[test]
+fn test_codex_subcommand_exists() {
+    let output = yuiclaw_bin()
+        .arg("codex")
+        .arg("--help")
+        .output()
+        .expect("failed to run yuiclaw codex --help");
+    assert!(output.status.success(), "yuiclaw codex --help should exit 0");
+}
+
+#[test]
+fn test_opencode_subcommand_exists() {
+    let output = yuiclaw_bin()
+        .arg("opencode")
+        .arg("--help")
+        .output()
+        .expect("failed to run yuiclaw opencode --help");
+    assert!(output.status.success(), "yuiclaw opencode --help should exit 0");
+}
+
+#[test]
+fn test_provider_subcommands_appear_in_main_help() {
+    let output = yuiclaw_bin()
+        .arg("--help")
+        .output()
+        .expect("failed to run yuiclaw --help");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("gemini"), "main help should list gemini subcommand");
+    assert!(stdout.contains("claude"), "main help should list claude subcommand");
+    assert!(stdout.contains("codex"), "main help should list codex subcommand");
+    assert!(stdout.contains("opencode"), "main help should list opencode subcommand");
+}

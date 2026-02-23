@@ -84,6 +84,27 @@ pub async fn start_stack(tool: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+/// Start the stack with optional new-session semantics.
+///
+/// If `new_session` is true and the bridge is already running, a `/clear`
+/// command is sent to the bridge before exec'ing into the TUI, discarding any
+/// existing session state for the selected provider.
+pub async fn start_stack_with_opts(tool: &str, new_session: bool) -> Result<(), Box<dyn std::error::Error>> {
+    if new_session && is_bridge_running() {
+        // Ask the bridge to discard the current session before we attach
+        let _ = Command::new("acomm")
+            .arg("--publish")
+            .arg("/clear")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .await;
+        // Brief pause so the bridge has time to process /clear before we exec
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    start_stack(tool).await
+}
+
 /// Stop the acomm bridge process and remove the socket file.
 pub async fn stop_bridge() -> Result<(), Box<dyn std::error::Error>> {
     if !is_bridge_running() {

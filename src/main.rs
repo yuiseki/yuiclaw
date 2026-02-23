@@ -18,6 +18,11 @@ async fn main() {
 
     let result = match command {
         Commands::Start { tool } => process::start_stack(&tool).await,
+        // Provider shorthand subcommands — map to start_stack_with_opts
+        Commands::Gemini { new } => process::start_stack_with_opts("gemini", new).await,
+        Commands::Claude { new } => process::start_stack_with_opts("claude", new).await,
+        Commands::Codex { new } => process::start_stack_with_opts("codex", new).await,
+        Commands::Opencode { new } => process::start_stack_with_opts("opencode", new).await,
         Commands::Stop => process::stop_bridge().await,
         Commands::Status => status::show_status().await,
         Commands::Init => init::initialize().await,
