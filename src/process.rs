@@ -35,7 +35,13 @@ pub async fn start_stack(tool: &str) -> Result<(), Box<dyn std::error::Error>> {
             .await;
     }
 
+    let amem_root = std::env::var("AMEM_ROOT")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .map(|v| format!("{} (AMEM_ROOT)", v))
+        .unwrap_or_else(|| "~/.amem (default)".to_string());
     eprintln!("Starting YuiClaw with tool: {}", tool);
+    eprintln!("Memory: {}", amem_root);
     eprintln!("Launching acomm-tui... (press q to quit)");
 
     // exec(2) into acomm-tui — this process is replaced by the TypeScript TUI.
