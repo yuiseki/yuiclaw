@@ -35,4 +35,6 @@ pub enum Commands {
         #[arg(short, long)]
         channel: Option<String>,
     },
+    /// 実行中の対話セッションをリセットする (会話履歴・エージェントセッションをクリア)
+    Reset,
 }

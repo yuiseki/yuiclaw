@@ -25,6 +25,7 @@ async fn main() {
         Commands::Pub { message, channel } => {
             process::publish(&message, channel.as_deref()).await
         }
+        Commands::Reset => process::reset_session().await,
     };
 
     if let Err(e) = result {

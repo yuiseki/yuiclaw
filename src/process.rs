@@ -152,6 +152,27 @@ pub async fn publish(
     Ok(())
 }
 
+/// Reset the active session by sending /clear to the running bridge.
+/// Clears the in-memory event backlog and the agent session manager.
+/// The TUI (if connected) will display the bridge's "Cleared." acknowledgement.
+pub async fn reset_session() -> Result<(), Box<dyn std::error::Error>> {
+    if !is_bridge_running() {
+        println!("No active session (bridge is not running).");
+        return Ok(());
+    }
+
+    let mut cmd = Command::new("acomm");
+    cmd.arg("--publish").arg("/clear");
+
+    let status = cmd.status().await?;
+    if !status.success() {
+        return Err("Failed to send reset command to bridge.".into());
+    }
+
+    println!("Session reset.");
+    Ok(())
+}
+
 fn is_bridge_running() -> bool {
     components::is_bridge_running()
 }

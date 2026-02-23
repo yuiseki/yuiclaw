@@ -77,6 +77,7 @@ Top-level commands:
 - `init`: Initialize `amem`, `abeat`, and register default scheduled jobs.
 - `tick`: Run due `abeat` jobs (intended for cron/systemd).
 - `pub <message> [--channel CHANNEL]`: Publish a message to the running bridge.
+- `reset`: Reset the active session (clears conversation history and agent state).
 
 ## Quick Start
 
@@ -182,6 +183,16 @@ Publishes a message to the running bridge. Useful for scripted interactions or p
 yuiclaw pub "Summarise today's activity log"
 yuiclaw pub "Alert: disk usage above 90%" --channel heartbeat
 ```
+
+### `yuiclaw reset`
+
+Resets the active session while the bridge keeps running. Clears the in-memory conversation history and the agent session, so the next message starts a fresh context. The connected TUI displays a confirmation immediately.
+
+```bash
+yuiclaw reset
+```
+
+If no bridge is running, the command exits cleanly with a notice.
 
 ## Architecture
 
