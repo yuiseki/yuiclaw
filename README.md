@@ -75,7 +75,11 @@ yuiclaw --help
 
 Top-level commands:
 
-- `start [--tool TOOL]`: Launch the full stack.
+- `gemini [--new]`: Launch with Gemini provider (restore previous session; `--new` to discard).
+- `claude [--new]`: Launch with Claude provider.
+- `codex [--new]`: Launch with Codex provider.
+- `opencode [--new]`: Launch with OpenCode provider.
+- `start [--tool TOOL]`: Launch with an explicit tool name (same as above, kept for compatibility).
 - `stop`: Stop the running `acomm` bridge.
 - `status`: Show the health of all components.
 - `init`: Initialize `amem`, `abeat`, and register default scheduled jobs.
@@ -89,8 +93,17 @@ Top-level commands:
 # First-time setup
 yuiclaw init
 
-# Launch
+# Launch (Gemini by default)
 yuiclaw
+
+# Launch with a specific provider
+yuiclaw gemini
+yuiclaw claude
+yuiclaw codex
+yuiclaw opencode
+
+# Start fresh — discard any existing session
+yuiclaw claude --new
 
 # Check component health (from another terminal)
 yuiclaw status
@@ -98,17 +111,37 @@ yuiclaw status
 
 ## Main Commands
 
+### `yuiclaw <provider>` (shorthand)
+
+Start the full stack with a specific AI provider. Restores the previous session if one exists.
+
+```bash
+yuiclaw gemini           # Start with Gemini, restore previous session
+yuiclaw claude           # Start with Claude
+yuiclaw codex            # Start with Codex
+yuiclaw opencode         # Start with OpenCode
+```
+
+Add `--new` to discard the existing session and start fresh:
+
+```bash
+yuiclaw gemini --new     # Discard Gemini session, start fresh
+yuiclaw claude --new
+```
+
+When `--new` is given and the bridge is already running, a `/clear` command is sent to the bridge before the TUI starts, resetting the backlog and session state.
+
 ### `yuiclaw` / `yuiclaw start`
 
-Boots the full stack. Equivalent to `yuiclaw start --tool gemini`.
+Boots the full stack. Equivalent to `yuiclaw gemini`.
 
 1. Silently runs `amem init` and `abeat init` (idempotent).
 2. `exec`s into `acomm-tui` (TypeScript TUI) if available, otherwise falls back to `acomm` (Rust TUI).
 
 ```bash
-yuiclaw start --tool claude     # Start with Claude
-yuiclaw start --tool codex      # Start with Codex
-yuiclaw start --tool opencode   # Start with OpenCode
+yuiclaw start --tool claude     # Same as: yuiclaw claude
+yuiclaw start --tool codex
+yuiclaw start --tool opencode
 ```
 
 Supported tools: `gemini` (default), `claude`, `codex`, `opencode`.
@@ -200,21 +233,44 @@ If no bridge is running, the command exits cleanly with a notice.
 
 ## Architecture
 
-```
-yuiclaw start
-     │
-     ├─ amem init       (idempotent)
-     ├─ abeat init      (idempotent)
-     └─ exec acomm-tui  ──── acomm --bridge
-                                    │
-                                  acore ──── amem  (context injection)
-                                        └── gemini / claude / codex / opencode
+```mermaid
+flowchart TD
+    user["User"]
+    yuiclaw["yuiclaw\n(this binary)"]
 
-abeat (cron/systemd)
-     └─ yuiclaw tick
-              └─ acomm --publish "heartbeat prompt"
-                        └─ bridge ──── acore (proactive turn)
+    subgraph stack["Full Stack"]
+        tui["acomm-tui\n(TypeScript / Ink)"]
+        bridge["acomm --bridge\n/tmp/acomm.sock"]
+        acore["acore\nSessionManager"]
+        amem["amem\n~/.amem/"]
+        ai["AI CLI\n(gemini / claude / codex / opencode)"]
+    end
+
+    abeat["abeat\n(scheduler)"]
+    cron["cron / systemd"]
+
+    user -->|yuiclaw gemini| yuiclaw
+    yuiclaw -->|amem init| amem
+    yuiclaw -->|abeat init| abeat
+    yuiclaw -->|exec| tui
+    tui <-->|JSONL over socket| bridge
+    bridge -->|execute_with_resume| acore
+    acore -->|amem today| amem
+    acore -->|spawn| ai
+
+    cron -->|yuiclaw tick| abeat
+    abeat -->|acomm --publish| bridge
 ```
+
+**Boot sequence** (`yuiclaw gemini`):
+1. `amem init` + `abeat init` (idempotent)
+2. `exec(2)` → `acomm-tui --tool gemini` (replaces the yuiclaw process)
+3. `acomm-tui` ensures the bridge is running, then connects to the socket
+4. Bridge replays backlog and syncs amem context to the new client
+
+**Session restore**: `SessionManager` in the bridge retains `session_id` values for each provider across TUI reconnections. Switching back to a provider with a prior session resumes it automatically.
+
+**New session** (`--new` flag): sends `/clear` to the bridge before exec, discarding the backlog and resetting all session state.
 
 ## Persona Customisation
 
