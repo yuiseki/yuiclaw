@@ -11,6 +11,10 @@ Integrated entry point for the `a*` AI assistant stack.
 - **Tool-Agnostic**: Switch between Gemini, Claude, Codex, and OpenCode at runtime.
 - **Customizable Persona**: The AI assistant identity is configured in `~/.amem/agent/IDENTITY.md` — the bundled "YuiClaw" character is just a default.
 
+## Screenshots
+
+[![Image from Gyazo](https://i.gyazo.com/90c2c92c812ae79e2a223b11ca788049.png)](https://gyazo.com/90c2c92c812ae79e2a223b11ca788049)
+
 ## Prerequisites
 
 All components must be available in `PATH`:
