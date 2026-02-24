@@ -135,6 +135,10 @@ fn test_start_subcommand_help() {
         stdout.contains("--provider"),
         "start help should mention --provider"
     );
+    assert!(
+        stdout.contains("[default: OpenCode]"),
+        "start help should show OpenCode as default provider"
+    );
 }
 
 #[test]

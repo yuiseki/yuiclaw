@@ -94,7 +94,7 @@ Top-level commands:
 # First-time setup
 yuiclaw init
 
-# Launch (Gemini by default)
+# Launch (OpenCode by default)
 yuiclaw
 
 # Launch with a specific provider
@@ -134,7 +134,7 @@ When `--new` is given and the bridge is already running, a `/clear` command is s
 
 ### `yuiclaw` / `yuiclaw start`
 
-Boots the full stack. Equivalent to `yuiclaw gemini`.
+Boots the full stack. Equivalent to `yuiclaw opencode`.
 
 1. Silently runs `amem init` and `abeat init` (idempotent).
 2. If notification adapters are configured, auto-starts `acomm --ntfy`, `acomm --discord`, and/or `acomm --slack` (only for adapters that are configured and not already running).
@@ -146,7 +146,7 @@ yuiclaw start --tool codex
 yuiclaw start --tool opencode
 ```
 
-Supported tools: `gemini` (default), `claude`, `codex`, `opencode`.
+Supported tools: `opencode` (default), `gemini`, `claude`, `codex`.
 
 Configured adapter detection is environment-variable based:
 

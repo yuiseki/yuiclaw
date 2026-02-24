@@ -33,7 +33,7 @@ pub enum Commands {
     /// フルスタックを起動する (bridge + TUI)
     Start {
         /// 使用するAIプロバイダー [Gemini|Claude|Codex|OpenCode|Dummy]
-        #[arg(short, long, default_value = "Gemini")]
+        #[arg(short, long, default_value = "OpenCode")]
         provider: String,
     },
     /// Gemini プロバイダーで起動する (前回セッションがある場合は復元)

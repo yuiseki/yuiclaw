@@ -18,7 +18,7 @@ async fn main() {
 
     // デフォルト（引数なし）は start と同等
     let command = cli.command.unwrap_or(Commands::Start {
-        provider: "Gemini".to_string(),
+        provider: "OpenCode".to_string(),
     });
 
     let result = match command {
