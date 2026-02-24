@@ -18,7 +18,14 @@ pub async fn initialize() -> Result<(), Box<dyn std::error::Error>> {
             .await
             .map(|s| s.success())
             .unwrap_or(false);
-        println!("  {}", if ok { "✓ amem initialized" } else { "✗ amem init failed (continuing)" });
+        println!(
+            "  {}",
+            if ok {
+                "✓ amem initialized"
+            } else {
+                "✗ amem init failed (continuing)"
+            }
+        );
     } else {
         println!("[1/3] amem が見つかりません — スキップ");
     }
@@ -32,7 +39,14 @@ pub async fn initialize() -> Result<(), Box<dyn std::error::Error>> {
             .await
             .map(|s| s.success())
             .unwrap_or(false);
-        println!("  {}", if ok { "✓ abeat initialized" } else { "✗ abeat init failed (continuing)" });
+        println!(
+            "  {}",
+            if ok {
+                "✓ abeat initialized"
+            } else {
+                "✗ abeat init failed (continuing)"
+            }
+        );
 
         // 3. デフォルトのハートビートジョブを設定
         println!("[3/3] ハートビートジョブを設定しています...");
@@ -83,15 +97,25 @@ async fn setup_heartbeat_job() {
 
     let ok = Command::new("abeat")
         .args([
-            "set", "jobs", "add",
-            "--id", "yuiclaw-heartbeat",
-            "--description", "YuiClaw 30分ごとのプロアクティブチェック",
-            "--kind", "heartbeat_check",
-            "--every", "30m",
-            "--agent", "shell",
-            "--workspace", &home,
-            "--exec", &exec_cmd,
-            "--no-op-token", "HEARTBEAT_OK",
+            "set",
+            "jobs",
+            "add",
+            "--id",
+            "yuiclaw-heartbeat",
+            "--description",
+            "YuiClaw 30分ごとのプロアクティブチェック",
+            "--kind",
+            "heartbeat_check",
+            "--every",
+            "30m",
+            "--agent",
+            "shell",
+            "--workspace",
+            &home,
+            "--exec",
+            &exec_cmd,
+            "--no-op-token",
+            "HEARTBEAT_OK",
         ])
         .status()
         .await

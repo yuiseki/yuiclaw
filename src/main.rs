@@ -27,9 +27,7 @@ async fn main() {
         Commands::Status => status::show_status().await,
         Commands::Init => init::initialize().await,
         Commands::Tick => process::run_tick().await,
-        Commands::Pub { message, channel } => {
-            process::publish(&message, channel.as_deref()).await
-        }
+        Commands::Pub { message, channel } => process::publish(&message, channel.as_deref()).await,
         Commands::Reset => process::reset_session().await,
     };
 

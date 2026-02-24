@@ -136,7 +136,8 @@ When `--new` is given and the bridge is already running, a `/clear` command is s
 Boots the full stack. Equivalent to `yuiclaw gemini`.
 
 1. Silently runs `amem init` and `abeat init` (idempotent).
-2. `exec`s into `acomm-tui` (TypeScript TUI) if available, otherwise falls back to `acomm` (Rust TUI).
+2. If notification adapters are configured, auto-starts `acomm --ntfy`, `acomm --discord`, and/or `acomm --slack` (only for adapters that are configured and not already running).
+3. `exec`s into `acomm-tui` (TypeScript TUI) if available, otherwise falls back to `acomm` (Rust TUI).
 
 ```bash
 yuiclaw start --tool claude     # Same as: yuiclaw claude
@@ -145,6 +146,12 @@ yuiclaw start --tool opencode
 ```
 
 Supported tools: `gemini` (default), `claude`, `codex`, `opencode`.
+
+Configured adapter detection is environment-variable based:
+
+- `ntfy`: `NTFY_TOPIC`
+- `Discord`: `DISCORD_BOT_TOKEN`
+- `Slack`: `SLACK_APP_TOKEN` and `SLACK_BOT_TOKEN`
 
 ### `yuiclaw stop`
 
@@ -158,6 +165,9 @@ yuiclaw stop
 
 Prints the current health of all components.
 
+If notification adapters are configured via environment variables, a `[Channels]` section is shown.
+`✓ connected` means the `acomm` adapter process (for example `acomm --discord`) is actually running and the bridge socket is up.
+
 ```
 === YuiClaw Status ===
 
@@ -168,6 +178,9 @@ Prints the current health of all components.
 
 [Bridge]
   Socket: ✓ running (/tmp/acomm.sock)
+
+[Channels]
+  Discord: ✓ connected
 
 [Scheduled Jobs]
   yuiclaw-heartbeat    30m    enabled

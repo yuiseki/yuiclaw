@@ -14,7 +14,10 @@ fn test_help_flag() {
         .expect("failed to run yuiclaw --help");
     assert!(output.status.success(), "yuiclaw --help should exit 0");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("yuiclaw"), "help text should mention yuiclaw");
+    assert!(
+        stdout.contains("yuiclaw"),
+        "help text should mention yuiclaw"
+    );
 }
 
 #[test]
@@ -37,7 +40,10 @@ fn test_status_subcommand_exits_ok() {
     // status should always exit 0 even if components are missing
     assert!(output.status.success(), "yuiclaw status should exit 0");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("YuiClaw"), "status output should contain YuiClaw");
+    assert!(
+        stdout.contains("YuiClaw"),
+        "status output should contain YuiClaw"
+    );
 }
 
 #[test]
@@ -62,7 +68,10 @@ fn test_init_subcommand_exits_ok() {
         .expect("failed to run yuiclaw init");
     assert!(output.status.success(), "yuiclaw init should exit 0");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("YuiClaw"), "init output should contain YuiClaw");
+    assert!(
+        stdout.contains("YuiClaw"),
+        "init output should contain YuiClaw"
+    );
 }
 
 #[test]
@@ -107,7 +116,10 @@ fn test_stop_subcommand_handles_no_bridge() {
         .arg("stop")
         .output()
         .expect("failed to run yuiclaw stop");
-    assert!(output.status.success(), "stop should exit 0 even if bridge is not running");
+    assert!(
+        output.status.success(),
+        "stop should exit 0 even if bridge is not running"
+    );
 }
 
 #[test]
@@ -119,7 +131,10 @@ fn test_start_subcommand_help() {
         .expect("failed to run yuiclaw start --help");
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("--provider"), "start help should mention --provider");
+    assert!(
+        stdout.contains("--provider"),
+        "start help should mention --provider"
+    );
 }
 
 // --- Provider shorthand subcommand tests ---
@@ -131,7 +146,10 @@ fn test_gemini_subcommand_exists() {
         .arg("--help")
         .output()
         .expect("failed to run yuiclaw gemini --help");
-    assert!(output.status.success(), "yuiclaw gemini --help should exit 0");
+    assert!(
+        output.status.success(),
+        "yuiclaw gemini --help should exit 0"
+    );
 }
 
 #[test]
@@ -142,7 +160,10 @@ fn test_gemini_subcommand_has_new_flag() {
         .output()
         .expect("failed to run yuiclaw gemini --help");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("new"), "gemini help should mention --new flag");
+    assert!(
+        stdout.contains("new"),
+        "gemini help should mention --new flag"
+    );
 }
 
 #[test]
@@ -152,7 +173,10 @@ fn test_claude_subcommand_exists() {
         .arg("--help")
         .output()
         .expect("failed to run yuiclaw claude --help");
-    assert!(output.status.success(), "yuiclaw claude --help should exit 0");
+    assert!(
+        output.status.success(),
+        "yuiclaw claude --help should exit 0"
+    );
 }
 
 #[test]
@@ -162,7 +186,10 @@ fn test_codex_subcommand_exists() {
         .arg("--help")
         .output()
         .expect("failed to run yuiclaw codex --help");
-    assert!(output.status.success(), "yuiclaw codex --help should exit 0");
+    assert!(
+        output.status.success(),
+        "yuiclaw codex --help should exit 0"
+    );
 }
 
 #[test]
@@ -172,7 +199,10 @@ fn test_opencode_subcommand_exists() {
         .arg("--help")
         .output()
         .expect("failed to run yuiclaw opencode --help");
-    assert!(output.status.success(), "yuiclaw opencode --help should exit 0");
+    assert!(
+        output.status.success(),
+        "yuiclaw opencode --help should exit 0"
+    );
 }
 
 #[test]
@@ -182,8 +212,20 @@ fn test_provider_subcommands_appear_in_main_help() {
         .output()
         .expect("failed to run yuiclaw --help");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("gemini"), "main help should list gemini subcommand");
-    assert!(stdout.contains("claude"), "main help should list claude subcommand");
-    assert!(stdout.contains("codex"), "main help should list codex subcommand");
-    assert!(stdout.contains("opencode"), "main help should list opencode subcommand");
+    assert!(
+        stdout.contains("gemini"),
+        "main help should list gemini subcommand"
+    );
+    assert!(
+        stdout.contains("claude"),
+        "main help should list claude subcommand"
+    );
+    assert!(
+        stdout.contains("codex"),
+        "main help should list codex subcommand"
+    );
+    assert!(
+        stdout.contains("opencode"),
+        "main help should list opencode subcommand"
+    );
 }
