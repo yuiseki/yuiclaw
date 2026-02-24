@@ -1,5 +1,6 @@
 mod cli;
 mod components;
+mod env;
 mod init;
 mod process;
 mod status;
@@ -9,6 +10,10 @@ use cli::{Cli, Commands, DaemonCommands};
 
 #[tokio::main]
 async fn main() {
+    // Load ~/.config/yuiclaw/.env before anything else so that adapter tokens
+    // and other settings are available for all subcommands.
+    env::load_config_dotenv();
+
     let cli = Cli::parse();
 
     // デフォルト（引数なし）は start と同等
