@@ -51,6 +51,7 @@ pub async fn initialize() -> Result<(), Box<dyn std::error::Error>> {
         // 3. デフォルトのハートビートジョブを設定
         println!("[3/3] ハートビートジョブを設定しています...");
         setup_heartbeat_job().await;
+        setup_daemon_watchdog_job().await;
     } else {
         println!("[2/3] abeat が見つかりません — スキップ");
         println!("[3/3] abeat なしのためジョブ設定をスキップ");
@@ -128,6 +129,80 @@ async fn setup_heartbeat_job() {
             "✓ yuiclaw-heartbeat job を登録しました"
         } else {
             "✗ heartbeat job の登録に失敗しました (abeat set jobs add が未実装の可能性あり)"
+        }
+    );
+}
+
+/// yuiclaw-daemon-watchdog ジョブを abeat に登録する
+async fn setup_daemon_watchdog_job() {
+    let job_id = "yuiclaw-daemon-watchdog";
+
+    // ジョブが既に存在するか確認
+    let exists = Command::new("abeat")
+        .args(["get", "job", job_id])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    if exists {
+        println!("  ✓ daemon watchdog job は既に存在します");
+        return;
+    }
+
+    let home = dirs::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
+        .to_string_lossy()
+        .to_string();
+
+    // yuiclaw daemon status --json を実行し、異常があれば restart する
+    // bridge が停止しているか、いずれかのチャンネルが接続されていない場合に異常とみなす
+    let exec_cmd = [
+        "STATUS=$(yuiclaw daemon status --json 2>/dev/null);",
+        "if [ $? -ne 0 ]; then yuiclaw daemon restart; exit 0; fi;",
+        "BRIDGE_RUNNING=$(echo \"$STATUS\" | jq -r '.bridge_running');",
+        "if [ \"$BRIDGE_RUNNING\" != \"true\" ]; then yuiclaw daemon restart; exit 0; fi;",
+        "DISCONNECTED_CHANNELS=$(echo \"$STATUS\" | jq -r '.channels[] | select(.connected == false) | .label');",
+        "if [ -n \"$DISCONNECTED_CHANNELS\" ]; then yuiclaw daemon restart; exit 0; fi;",
+        "echo WATCHDOG_OK;",
+    ]
+    .join(" ");
+
+    let ok = Command::new("abeat")
+        .args([
+            "set",
+            "jobs",
+            "add",
+            "--id",
+            job_id,
+            "--description",
+            "YuiClaw デーモンの死活監視 (5分ごと)",
+            "--kind",
+            "heartbeat_check",
+            "--every",
+            "5m",
+            "--agent",
+            "shell",
+            "--workspace",
+            &home,
+            "--exec",
+            &exec_cmd,
+            "--no-op-token",
+            "WATCHDOG_OK",
+        ])
+        .status()
+        .await
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    println!(
+        "  {}",
+        if ok {
+            "✓ yuiclaw-daemon-watchdog job を登録しました"
+        } else {
+            "✗ daemon watchdog job の登録に失敗しました"
         }
     );
 }
