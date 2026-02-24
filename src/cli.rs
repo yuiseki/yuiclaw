@@ -16,7 +16,11 @@ pub enum DaemonCommands {
     /// デーモン (bridge + adapters) をバックグラウンドで起動する
     Start,
     /// デーモンのステータスを表示する
-    Status,
+    Status {
+        /// ステータスを JSON 形式で出力する
+        #[arg(long)]
+        json: bool,
+    },
     /// デーモンを停止する
     Stop,
     /// デーモンを再起動する

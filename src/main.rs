@@ -24,7 +24,7 @@ async fn main() {
     let result = match command {
         Commands::Daemon { action } => match action {
             DaemonCommands::Start => process::daemon_start().await,
-            DaemonCommands::Status => status::show_daemon_status().await,
+            DaemonCommands::Status { json } => status::show_daemon_status(json).await,
             DaemonCommands::Stop => process::daemon_stop().await,
             DaemonCommands::Restart => process::daemon_restart().await,
         },

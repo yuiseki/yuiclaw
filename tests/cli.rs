@@ -205,6 +205,23 @@ fn test_daemon_stop_help() {
 }
 
 #[test]
+fn test_daemon_status_json() {
+    let output = yuiclaw_bin()
+        .arg("daemon")
+        .arg("status")
+        .arg("--json")
+        .output()
+        .expect("failed to run yuiclaw daemon status --json");
+    assert!(
+        output.status.success(),
+        "daemon status --json should exit 0"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Should be valid JSON
+    let _json: serde_json::Value = serde_json::from_str(&stdout).expect("output should be valid JSON");
+}
+
+#[test]
 fn test_daemon_status_help() {
     let output = yuiclaw_bin()
         .arg("daemon")

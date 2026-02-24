@@ -1,4 +1,5 @@
 use crate::components::{self, SOCKET_PATH};
+use serde::Serialize;
 use std::collections::HashSet;
 
 #[derive(Debug, Clone, Copy)]
@@ -8,10 +9,17 @@ struct ChannelSpec {
     adapter_flag: &'static str,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct ChannelStatus {
     label: &'static str,
     connected: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct DaemonStatus {
+    bridge_running: bool,
+    socket_path: String,
+    channels: Vec<ChannelStatus>,
 }
 
 const CHANNEL_SPECS: [ChannelSpec; 3] = [
@@ -129,9 +137,19 @@ pub async fn show_status() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// デーモン（bridge + adapters）のステータスを表示する
-pub async fn show_daemon_status() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn show_daemon_status(json: bool) -> Result<(), Box<dyn std::error::Error>> {
     let s = components::detect().await;
     let channels = detect_channel_statuses(s.bridge_running).await;
+
+    if json {
+        let status = DaemonStatus {
+            bridge_running: s.bridge_running,
+            socket_path: SOCKET_PATH.to_string(),
+            channels,
+        };
+        println!("{}", serde_json::to_string_pretty(&status)?);
+        return Ok(());
+    }
 
     println!("=== YuiClaw Daemon Status ===");
     println!();
