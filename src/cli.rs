@@ -45,6 +45,8 @@ pub enum Commands {
     },
     /// acomm bridge を停止する
     Stop,
+    /// acomm bridge を再起動する (TUIは起動しない)
+    Restart,
     /// 全コンポーネントのステータスを表示する
     Status,
     /// yuiclaw システムを初期化する (amem init + abeat init + デフォルトジョブ)

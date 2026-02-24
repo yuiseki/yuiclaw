@@ -137,6 +137,21 @@ fn test_start_subcommand_help() {
     );
 }
 
+#[test]
+fn test_restart_subcommand_help() {
+    let output = yuiclaw_bin()
+        .arg("restart")
+        .arg("--help")
+        .output()
+        .expect("failed to run yuiclaw restart --help");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("restart"),
+        "restart help should mention restart subcommand"
+    );
+}
+
 // --- Provider shorthand subcommand tests ---
 
 #[test]
@@ -227,5 +242,9 @@ fn test_provider_subcommands_appear_in_main_help() {
     assert!(
         stdout.contains("opencode"),
         "main help should list opencode subcommand"
+    );
+    assert!(
+        stdout.contains("restart"),
+        "main help should list restart subcommand"
     );
 }

@@ -34,32 +34,7 @@ const CHANNEL_ADAPTER_SPECS: [ChannelAdapterSpec; 3] = [
 ///   1. Silently initialise amem / abeat (idempotent)
 ///   2. exec(2) into the TypeScript TUI (acomm-tui), replacing this process
 pub async fn start_stack(provider: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let s = components::detect().await;
-
-    if !s.acomm_available {
-        return Err("acomm not found in PATH. \
-             See https://github.com/yuiseki/acomm for installation instructions."
-            .into());
-    }
-
-    // Silently initialise amem / abeat (idempotent — safe to run even if already initialised)
-    if s.amem_available {
-        let _ = Command::new("amem")
-            .arg("init")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .await;
-    }
-    if s.abeat_available {
-        let _ = Command::new("abeat")
-            .arg("init")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .await;
-    }
-
+    initialize_runtime_components().await?;
     auto_start_configured_adapters().await;
 
     let amem_root = std::env::var("AMEM_ROOT")
@@ -109,6 +84,22 @@ pub async fn start_stack(provider: &str) -> Result<(), Box<dyn std::error::Error
         }
         Ok(())
     }
+}
+
+/// Restart the headless runtime services (bridge + configured adapters) without launching the TUI.
+///
+/// Equivalent to `yuiclaw stop` followed by the non-interactive startup portion of `yuiclaw start`.
+pub async fn restart_stack() -> Result<(), Box<dyn std::error::Error>> {
+    stop_bridge().await?;
+    initialize_runtime_components().await?;
+
+    if !ensure_bridge_running_for_adapters().await {
+        return Err("Failed to start acomm bridge.".into());
+    }
+    auto_start_configured_adapters().await;
+
+    println!("Bridge restarted. (TUI not started)");
+    Ok(())
 }
 
 /// Start the stack with optional new-session semantics.
@@ -241,6 +232,36 @@ fn is_command_in_path(cmd: &str) -> bool {
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+async fn initialize_runtime_components() -> Result<(), Box<dyn std::error::Error>> {
+    let s = components::detect().await;
+
+    if !s.acomm_available {
+        return Err("acomm not found in PATH. \
+             See https://github.com/yuiseki/acomm for installation instructions."
+            .into());
+    }
+
+    // Silently initialise amem / abeat (idempotent — safe to run even if already initialised)
+    if s.amem_available {
+        let _ = Command::new("amem")
+            .arg("init")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .await;
+    }
+    if s.abeat_available {
+        let _ = Command::new("abeat")
+            .arg("init")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .await;
+    }
+
+    Ok(())
 }
 
 async fn auto_start_configured_adapters() {

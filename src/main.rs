@@ -24,6 +24,7 @@ async fn main() {
         Commands::Codex { new } => process::start_stack_with_opts("Codex", new).await,
         Commands::Opencode { new } => process::start_stack_with_opts("OpenCode", new).await,
         Commands::Stop => process::stop_bridge().await,
+        Commands::Restart => process::restart_stack().await,
         Commands::Status => status::show_status().await,
         Commands::Init => init::initialize().await,
         Commands::Tick => process::run_tick().await,

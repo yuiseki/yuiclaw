@@ -81,6 +81,7 @@ Top-level commands:
 - `opencode [--new]`: Launch with OpenCode provider.
 - `start [--tool TOOL]`: Launch with an explicit tool name (same as above, kept for compatibility).
 - `stop`: Stop the running `acomm` bridge.
+- `restart`: Restart the headless runtime (`acomm --bridge` + configured adapters) without launching the TUI.
 - `status`: Show the health of all components.
 - `init`: Initialize `amem`, `abeat`, and register default scheduled jobs.
 - `tick`: Run due `abeat` jobs (intended for cron/systemd).
@@ -159,6 +160,21 @@ Sends `SIGTERM` to any running `acomm --bridge` process and removes the socket f
 
 ```bash
 yuiclaw stop
+```
+
+### `yuiclaw restart`
+
+Restarts the headless runtime services without launching the TUI.
+
+This command performs:
+
+1. `yuiclaw stop` (stop the running `acomm --bridge` and remove the socket if present)
+2. The non-interactive startup part of `yuiclaw start` (`amem init`, `abeat init`)
+3. Starts `acomm --bridge`
+4. Auto-starts configured adapters (`acomm --ntfy`, `acomm --discord`, `acomm --slack`) if needed
+
+```bash
+yuiclaw restart
 ```
 
 ### `yuiclaw status`
