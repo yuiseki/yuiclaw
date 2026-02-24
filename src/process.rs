@@ -31,11 +31,13 @@ const CHANNEL_ADAPTER_SPECS: [ChannelAdapterSpec; 3] = [
 ];
 
 /// Launch the full stack:
-///   1. Silently initialise amem / abeat (idempotent)
+///   1. If daemon (bridge) is not running: silently initialise amem / abeat and start adapters
 ///   2. exec(2) into the TypeScript TUI (acomm-tui), replacing this process
 pub async fn start_stack(provider: &str) -> Result<(), Box<dyn std::error::Error>> {
-    initialize_runtime_components().await?;
-    auto_start_configured_adapters().await;
+    if !is_bridge_running() {
+        initialize_runtime_components().await?;
+        auto_start_configured_adapters().await;
+    }
 
     let amem_root = std::env::var("AMEM_ROOT")
         .ok()
@@ -102,6 +104,35 @@ pub async fn restart_stack() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Start the daemon (bridge + configured adapters) in the background without launching the TUI.
+pub async fn daemon_start() -> Result<(), Box<dyn std::error::Error>> {
+    if is_bridge_running() {
+        println!("Daemon is already running.");
+        return Ok(());
+    }
+    initialize_runtime_components().await?;
+
+    if !ensure_bridge_running_for_adapters().await {
+        return Err("Failed to start acomm bridge.".into());
+    }
+    auto_start_configured_adapters().await;
+
+    println!("Daemon started. (bridge + adapters running in background)");
+    Ok(())
+}
+
+/// Stop all adapter processes and the acomm bridge.
+pub async fn daemon_stop() -> Result<(), Box<dyn std::error::Error>> {
+    stop_all_adapters().await;
+    stop_bridge().await
+}
+
+/// Restart the daemon (stop all, then start again).
+pub async fn daemon_restart() -> Result<(), Box<dyn std::error::Error>> {
+    daemon_stop().await?;
+    daemon_start().await
+}
+
 /// Start the stack with optional new-session semantics.
 ///
 /// If `new_session` is true and the bridge is already running, a `/clear`
@@ -154,6 +185,18 @@ pub async fn stop_bridge() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Bridge stopped.");
     Ok(())
+}
+
+/// Stop all configured channel adapter processes (ntfy, Discord, Slack).
+async fn stop_all_adapters() {
+    for spec in &CHANNEL_ADAPTER_SPECS {
+        let pattern = format!("acomm.*{}", spec.adapter_flag);
+        let _ = Command::new("pkill")
+            .arg("-f")
+            .arg(&pattern)
+            .status()
+            .await;
+    }
 }
 
 /// Run abeat's due jobs (heartbeat tick).

@@ -5,7 +5,7 @@ mod process;
 mod status;
 
 use clap::Parser;
-use cli::{Cli, Commands};
+use cli::{Cli, Commands, DaemonCommands};
 
 #[tokio::main]
 async fn main() {
@@ -17,6 +17,12 @@ async fn main() {
     });
 
     let result = match command {
+        Commands::Daemon { action } => match action {
+            DaemonCommands::Start => process::daemon_start().await,
+            DaemonCommands::Status => status::show_daemon_status().await,
+            DaemonCommands::Stop => process::daemon_stop().await,
+            DaemonCommands::Restart => process::daemon_restart().await,
+        },
         Commands::Start { provider } => process::start_stack(&provider).await,
         // Provider shorthand subcommands — map to start_stack_with_opts
         Commands::Gemini { new } => process::start_stack_with_opts("Gemini", new).await,

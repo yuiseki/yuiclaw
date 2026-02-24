@@ -128,6 +128,43 @@ pub async fn show_status() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// デーモン（bridge + adapters）のステータスを表示する
+pub async fn show_daemon_status() -> Result<(), Box<dyn std::error::Error>> {
+    let s = components::detect().await;
+    let channels = detect_channel_statuses(s.bridge_running).await;
+
+    println!("=== YuiClaw Daemon Status ===");
+    println!();
+
+    println!("[Bridge]");
+    if s.bridge_running {
+        println!("  Socket: ✓ running ({})", SOCKET_PATH);
+    } else {
+        println!(
+            "  Socket: ✗ not running  (run `yuiclaw daemon start` to launch)"
+        );
+    }
+    println!();
+
+    if !channels.is_empty() {
+        println!("[Channels]");
+        for ch in &channels {
+            println!(
+                "  {:<7}: {}",
+                ch.label,
+                if ch.connected {
+                    "✓ connected"
+                } else {
+                    "✗ not connected"
+                }
+            );
+        }
+        println!();
+    }
+
+    Ok(())
+}
+
 async fn detect_channel_statuses(bridge_running: bool) -> Vec<ChannelStatus> {
     let present_env_keys = present_nonempty_env_keys();
     let process_list = read_process_list().await.unwrap_or_default();

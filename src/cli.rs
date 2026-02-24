@@ -12,7 +12,24 @@ pub struct Cli {
 }
 
 #[derive(Subcommand, Debug)]
+pub enum DaemonCommands {
+    /// デーモン (bridge + adapters) をバックグラウンドで起動する
+    Start,
+    /// デーモンのステータスを表示する
+    Status,
+    /// デーモンを停止する
+    Stop,
+    /// デーモンを再起動する
+    Restart,
+}
+
+#[derive(Subcommand, Debug)]
 pub enum Commands {
+    /// デーモン (bridge + adapters) をバックグラウンドで管理する
+    Daemon {
+        #[command(subcommand)]
+        action: DaemonCommands,
+    },
     /// フルスタックを起動する (bridge + TUI)
     Start {
         /// 使用するAIプロバイダー [Gemini|Claude|Codex|OpenCode|Dummy]

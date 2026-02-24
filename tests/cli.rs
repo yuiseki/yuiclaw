@@ -152,6 +152,116 @@ fn test_restart_subcommand_help() {
     );
 }
 
+// --- Daemon subcommand tests ---
+
+#[test]
+fn test_daemon_subcommand_in_main_help() {
+    let output = yuiclaw_bin()
+        .arg("--help")
+        .output()
+        .expect("failed to run yuiclaw --help");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("daemon"),
+        "main help should list daemon subcommand"
+    );
+}
+
+#[test]
+fn test_daemon_help() {
+    let output = yuiclaw_bin()
+        .arg("daemon")
+        .arg("--help")
+        .output()
+        .expect("failed to run yuiclaw daemon --help");
+    assert!(output.status.success(), "yuiclaw daemon --help should exit 0");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("start"), "daemon help should mention start");
+    assert!(stdout.contains("stop"), "daemon help should mention stop");
+    assert!(stdout.contains("status"), "daemon help should mention status");
+    assert!(stdout.contains("restart"), "daemon help should mention restart");
+}
+
+#[test]
+fn test_daemon_start_help() {
+    let output = yuiclaw_bin()
+        .arg("daemon")
+        .arg("start")
+        .arg("--help")
+        .output()
+        .expect("failed to run yuiclaw daemon start --help");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_daemon_stop_help() {
+    let output = yuiclaw_bin()
+        .arg("daemon")
+        .arg("stop")
+        .arg("--help")
+        .output()
+        .expect("failed to run yuiclaw daemon stop --help");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_daemon_status_help() {
+    let output = yuiclaw_bin()
+        .arg("daemon")
+        .arg("status")
+        .arg("--help")
+        .output()
+        .expect("failed to run yuiclaw daemon status --help");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_daemon_restart_help() {
+    let output = yuiclaw_bin()
+        .arg("daemon")
+        .arg("restart")
+        .arg("--help")
+        .output()
+        .expect("failed to run yuiclaw daemon restart --help");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_daemon_stop_handles_no_daemon() {
+    // daemon stop when bridge is not running should exit 0 with a message
+    let output = yuiclaw_bin()
+        .arg("daemon")
+        .arg("stop")
+        .output()
+        .expect("failed to run yuiclaw daemon stop");
+    assert!(
+        output.status.success(),
+        "daemon stop should exit 0 even if daemon is not running"
+    );
+}
+
+#[test]
+fn test_daemon_status_exits_ok() {
+    let output = yuiclaw_bin()
+        .arg("daemon")
+        .arg("status")
+        .output()
+        .expect("failed to run yuiclaw daemon status");
+    assert!(
+        output.status.success(),
+        "daemon status should always exit 0"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Daemon"),
+        "daemon status output should contain Daemon"
+    );
+    assert!(
+        stdout.contains("Bridge"),
+        "daemon status output should contain Bridge"
+    );
+}
+
 // --- Provider shorthand subcommand tests ---
 
 #[test]
