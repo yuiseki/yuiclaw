@@ -15,7 +15,7 @@ pub struct Cli {
 pub enum Commands {
     /// フルスタックを起動する (bridge + TUI)
     Start {
-        /// 使用するAIプロバイダー [Gemini|Claude|Codex|OpenCode]
+        /// 使用するAIプロバイダー [Gemini|Claude|Codex|OpenCode|Dummy]
         #[arg(short, long, default_value = "Gemini")]
         provider: String,
     },
@@ -39,6 +39,12 @@ pub enum Commands {
     },
     /// OpenCode プロバイダーで起動する (前回セッションがある場合は復元)
     Opencode {
+        /// 既存セッションを破棄して新しいセッションで起動する
+        #[arg(long)]
+        new: bool,
+    },
+    /// Dummy (echo bot) プロバイダーで起動する（TUI動作確認用）
+    Dummy {
         /// 既存セッションを破棄して新しいセッションで起動する
         #[arg(long)]
         new: bool,

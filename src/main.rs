@@ -23,6 +23,7 @@ async fn main() {
         Commands::Claude { new } => process::start_stack_with_opts("Claude", new).await,
         Commands::Codex { new } => process::start_stack_with_opts("Codex", new).await,
         Commands::Opencode { new } => process::start_stack_with_opts("OpenCode", new).await,
+        Commands::Dummy { new } => process::start_stack_with_opts("Dummy", new).await,
         Commands::Stop => process::stop_bridge().await,
         Commands::Restart => process::restart_stack().await,
         Commands::Status => status::show_status().await,

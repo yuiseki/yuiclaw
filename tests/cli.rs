@@ -221,6 +221,19 @@ fn test_opencode_subcommand_exists() {
 }
 
 #[test]
+fn test_dummy_subcommand_exists() {
+    let output = yuiclaw_bin()
+        .arg("dummy")
+        .arg("--help")
+        .output()
+        .expect("failed to run yuiclaw dummy --help");
+    assert!(
+        output.status.success(),
+        "yuiclaw dummy --help should exit 0"
+    );
+}
+
+#[test]
 fn test_provider_subcommands_appear_in_main_help() {
     let output = yuiclaw_bin()
         .arg("--help")
@@ -242,6 +255,10 @@ fn test_provider_subcommands_appear_in_main_help() {
     assert!(
         stdout.contains("opencode"),
         "main help should list opencode subcommand"
+    );
+    assert!(
+        stdout.contains("dummy"),
+        "main help should list dummy subcommand"
     );
     assert!(
         stdout.contains("restart"),
