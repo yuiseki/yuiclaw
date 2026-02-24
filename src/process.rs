@@ -6,7 +6,7 @@ use tokio::process::Command;
 /// Launch the full stack:
 ///   1. Silently initialise amem / abeat (idempotent)
 ///   2. exec(2) into the TypeScript TUI (acomm-tui), replacing this process
-pub async fn start_stack(tool: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn start_stack(provider: &str) -> Result<(), Box<dyn std::error::Error>> {
     let s = components::detect().await;
 
     if !s.acomm_available {
@@ -59,8 +59,8 @@ pub async fn start_stack(tool: &str) -> Result<(), Box<dyn std::error::Error>> {
         };
 
         let err = std::process::Command::new(tui_cmd)
-            .arg("--tool")
-            .arg(tool)
+            .arg("--provider")
+            .arg(provider)
             .exec();
         return Err(format!("Failed to exec {}: {}", tui_cmd, err).into());
     }
@@ -73,8 +73,8 @@ pub async fn start_stack(tool: &str) -> Result<(), Box<dyn std::error::Error>> {
             "acomm"
         };
         let status = Command::new(tui_cmd)
-            .arg("--tool")
-            .arg(tool)
+            .arg("--provider")
+            .arg(provider)
             .status()
             .await?;
         if !status.success() {
@@ -89,7 +89,7 @@ pub async fn start_stack(tool: &str) -> Result<(), Box<dyn std::error::Error>> {
 /// If `new_session` is true and the bridge is already running, a `/clear`
 /// command is sent to the bridge before exec'ing into the TUI, discarding any
 /// existing session state for the selected provider.
-pub async fn start_stack_with_opts(tool: &str, new_session: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn start_stack_with_opts(provider: &str, new_session: bool) -> Result<(), Box<dyn std::error::Error>> {
     if new_session && is_bridge_running() {
         // Ask the bridge to discard the current session before we attach
         let _ = Command::new("acomm")
@@ -102,7 +102,7 @@ pub async fn start_stack_with_opts(tool: &str, new_session: bool) -> Result<(), 
         // Brief pause so the bridge has time to process /clear before we exec
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
-    start_stack(tool).await
+    start_stack(provider).await
 }
 
 /// Stop the acomm bridge process and remove the socket file.

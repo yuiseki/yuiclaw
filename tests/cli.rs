@@ -119,7 +119,7 @@ fn test_start_subcommand_help() {
         .expect("failed to run yuiclaw start --help");
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("tool"), "start help should mention --tool");
+    assert!(stdout.contains("--provider"), "start help should mention --provider");
 }
 
 // --- Provider shorthand subcommand tests ---

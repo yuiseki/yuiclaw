@@ -13,11 +13,11 @@ async fn main() {
 
     // デフォルト（引数なし）は start と同等
     let command = cli.command.unwrap_or(Commands::Start {
-        tool: "Gemini".to_string(),
+        provider: "Gemini".to_string(),
     });
 
     let result = match command {
-        Commands::Start { tool } => process::start_stack(&tool).await,
+        Commands::Start { provider } => process::start_stack(&provider).await,
         // Provider shorthand subcommands — map to start_stack_with_opts
         Commands::Gemini { new } => process::start_stack_with_opts("Gemini", new).await,
         Commands::Claude { new } => process::start_stack_with_opts("Claude", new).await,
