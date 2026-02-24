@@ -130,6 +130,10 @@ pub async fn daemon_stop() -> Result<(), Box<dyn std::error::Error>> {
 /// Restart the daemon (stop all, then start again).
 pub async fn daemon_restart() -> Result<(), Box<dyn std::error::Error>> {
     daemon_stop().await?;
+    // Be extra defensive on restart: remove any leftover socket before startup.
+    // This covers cases where the bridge process has exited but the stale socket
+    // file remains and can confuse daemon-start checks.
+    let _ = remove_socket_file_if_exists(SOCKET_PATH)?;
     daemon_start().await
 }
 
@@ -178,10 +182,7 @@ pub async fn stop_bridge() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Remove the Unix socket file
-    if Path::new(SOCKET_PATH).exists() {
-        std::fs::remove_file(SOCKET_PATH)?;
-        println!("Removed socket: {}", SOCKET_PATH);
-    }
+    remove_socket_file_if_exists(SOCKET_PATH)?;
 
     println!("Bridge stopped.");
     Ok(())
@@ -448,9 +449,19 @@ fn process_line_matches_acomm_flag(line: &str, flag: &str) -> bool {
     args.split_whitespace().any(|token| token == flag)
 }
 
+fn remove_socket_file_if_exists(path: &str) -> Result<bool, std::io::Error> {
+    if Path::new(path).exists() {
+        std::fs::remove_file(path)?;
+        println!("Removed socket: {}", path);
+        return Ok(true);
+    }
+    Ok(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     fn env_keys(keys: &[&str]) -> HashSet<String> {
         keys.iter().map(|k| (*k).to_string()).collect()
@@ -491,5 +502,29 @@ mod tests {
             "acomm           acomm --discordx",
             "--discord"
         ));
+    }
+
+    #[test]
+    fn remove_socket_file_if_exists_removes_existing_file() {
+        let dir = tempdir().unwrap();
+        let sock_path = dir.path().join("acomm.sock");
+        std::fs::write(&sock_path, b"stale").unwrap();
+        assert!(sock_path.exists());
+
+        let removed = remove_socket_file_if_exists(sock_path.to_str().unwrap()).unwrap();
+
+        assert!(removed);
+        assert!(!sock_path.exists());
+    }
+
+    #[test]
+    fn remove_socket_file_if_exists_returns_false_when_missing() {
+        let dir = tempdir().unwrap();
+        let sock_path = dir.path().join("missing.sock");
+
+        let removed = remove_socket_file_if_exists(sock_path.to_str().unwrap()).unwrap();
+
+        assert!(!removed);
+        assert!(!sock_path.exists());
     }
 }
