@@ -40,7 +40,7 @@ pub async fn start_stack(tool: &str) -> Result<(), Box<dyn std::error::Error>> {
         .filter(|v| !v.is_empty())
         .map(|v| format!("{} (AMEM_ROOT)", v))
         .unwrap_or_else(|| "~/.amem (default)".to_string());
-    eprintln!("Starting YuiClaw with tool: {}", tool);
+    eprintln!("Starting YuiClaw..." );
     eprintln!("Memory: {}", amem_root);
     eprintln!("Launching acomm-tui... (press q to quit)");
 
