@@ -1,6 +1,7 @@
 use crate::components::{self, SOCKET_PATH};
 use std::collections::HashSet;
 use std::path::Path;
+use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::net::UnixStream;
 use tokio::process::Command;
@@ -310,6 +311,7 @@ async fn initialize_runtime_components() -> Result<(), Box<dyn std::error::Error
 
 async fn auto_start_configured_adapters() {
     let present_env_keys = present_nonempty_env_keys();
+    let daemon_workdir = daemon_session_workdir();
     let mut process_list = read_process_list().await.unwrap_or_default();
 
     let adapters_to_start = adapters_to_autostart_from_inputs(&present_env_keys, &process_list);
@@ -332,12 +334,15 @@ async fn auto_start_configured_adapters() {
             continue;
         }
 
-        match std::process::Command::new("acomm")
-            .arg(spec.adapter_flag)
+        let mut cmd = std::process::Command::new("acomm");
+        cmd.arg(spec.adapter_flag)
             .stdout(Stdio::null())
-            .stderr(Stdio::inherit())
-            .spawn()
-        {
+            .stderr(Stdio::inherit());
+        // Background adapters inherit the daemon session workdir so all bridge-mediated
+        // sessions run under YUICLAW_HOME when configured.
+        apply_spawn_workdir_if_configured(&mut cmd, daemon_workdir.as_deref());
+
+        match cmd.spawn() {
             Ok(_) => {
                 eprintln!("Auto-started acomm adapter: {}", spec.label);
             }
@@ -352,6 +357,7 @@ async fn auto_start_configured_adapters() {
 }
 
 async fn ensure_bridge_running_for_adapters() -> bool {
+    let daemon_workdir = daemon_session_workdir();
     for _ in 0..20 {
         let process_list = read_process_list().await.unwrap_or_default();
         let bridge_process_running = process_list_has_acomm_flag(&process_list, "--bridge");
@@ -371,13 +377,13 @@ async fn ensure_bridge_running_for_adapters() -> bool {
             let _ = std::fs::remove_file(SOCKET_PATH);
         }
 
-        if std::process::Command::new("acomm")
-            .arg("--bridge")
+        let mut cmd = std::process::Command::new("acomm");
+        cmd.arg("--bridge")
             .stdout(Stdio::null())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .is_err()
-        {
+            .stderr(Stdio::inherit());
+        apply_spawn_workdir_if_configured(&mut cmd, daemon_workdir.as_deref());
+
+        if cmd.spawn().is_err() {
             return false;
         }
 
@@ -458,6 +464,28 @@ fn remove_socket_file_if_exists(path: &str) -> Result<bool, std::io::Error> {
     Ok(false)
 }
 
+fn resolve_daemon_session_workdir_from_env_value(raw: Option<String>) -> Option<PathBuf> {
+    let raw = raw?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(PathBuf::from(trimmed))
+}
+
+fn daemon_session_workdir() -> Option<PathBuf> {
+    resolve_daemon_session_workdir_from_env_value(std::env::var("YUICLAW_HOME").ok())
+}
+
+fn apply_spawn_workdir_if_configured(
+    cmd: &mut std::process::Command,
+    workdir: Option<&Path>,
+) {
+    if let Some(dir) = workdir {
+        cmd.current_dir(dir);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -526,5 +554,34 @@ mod tests {
 
         assert!(!removed);
         assert!(!sock_path.exists());
+    }
+
+    #[test]
+    fn resolve_daemon_session_workdir_from_env_value_returns_none_for_missing_or_blank() {
+        assert!(resolve_daemon_session_workdir_from_env_value(None).is_none());
+        assert!(resolve_daemon_session_workdir_from_env_value(Some("".into())).is_none());
+        assert!(resolve_daemon_session_workdir_from_env_value(Some("   ".into())).is_none());
+    }
+
+    #[test]
+    fn resolve_daemon_session_workdir_from_env_value_returns_trimmed_path() {
+        let path = resolve_daemon_session_workdir_from_env_value(Some(" /tmp/yuiclaw-home ".into()))
+            .expect("path should be parsed");
+        assert_eq!(path, PathBuf::from("/tmp/yuiclaw-home"));
+    }
+
+    #[test]
+    fn apply_spawn_workdir_if_configured_sets_command_current_dir() {
+        let dir = tempdir().unwrap();
+        let mut cmd = std::process::Command::new("sh");
+        apply_spawn_workdir_if_configured(&mut cmd, Some(dir.path()));
+        assert_eq!(cmd.get_current_dir(), Some(dir.path()));
+    }
+
+    #[test]
+    fn apply_spawn_workdir_if_configured_leaves_current_dir_unset_when_missing() {
+        let mut cmd = std::process::Command::new("sh");
+        apply_spawn_workdir_if_configured(&mut cmd, None);
+        assert!(cmd.get_current_dir().is_none());
     }
 }
