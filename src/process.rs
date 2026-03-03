@@ -334,8 +334,25 @@ async fn auto_start_configured_adapters() {
             continue;
         }
 
-        let mut cmd = std::process::Command::new("acomm");
-        cmd.arg(spec.adapter_flag)
+        // Wrap the adapter in a bash supervisor loop so that if the process exits
+        // for any reason (unrecoverable error, signal, crash) it is automatically
+        // restarted after a 5-second delay without requiring manual intervention.
+        // The .env file is sourced inside the loop so env vars are always present
+        // even when the daemon was started without them exported.
+        let script = format!(
+            "ENV_FILE=\"$HOME/.config/yuiclaw/.env\"; \
+            while true; do \
+                if [ -f \"$ENV_FILE\" ]; then set -a; . \"$ENV_FILE\"; set +a; fi; \
+                acomm {flag}; \
+                echo '[yuiclaw] {label} adapter exited, restarting in 5s...' >&2; \
+                sleep 5; \
+            done",
+            flag = spec.adapter_flag,
+            label = spec.label,
+        );
+        let mut cmd = std::process::Command::new("bash");
+        cmd.arg("-c")
+            .arg(&script)
             .stdout(Stdio::null())
             .stderr(Stdio::inherit());
         // Background adapters inherit the daemon session workdir so all bridge-mediated
