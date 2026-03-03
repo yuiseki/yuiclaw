@@ -394,8 +394,13 @@ async fn ensure_bridge_running_for_adapters() -> bool {
             let _ = std::fs::remove_file(SOCKET_PATH);
         }
 
-        let mut cmd = std::process::Command::new("acomm");
-        cmd.arg("--bridge")
+        // Wrap the bridge in a supervisor loop so it auto-restarts on exit.
+        let bridge_script =
+            "while true; do acomm --bridge; \
+             echo '[yuiclaw] bridge exited, restarting in 3s...' >&2; sleep 3; done";
+        let mut cmd = std::process::Command::new("bash");
+        cmd.arg("-c")
+            .arg(bridge_script)
             .stdout(Stdio::null())
             .stderr(Stdio::inherit());
         apply_spawn_workdir_if_configured(&mut cmd, daemon_workdir.as_deref());
