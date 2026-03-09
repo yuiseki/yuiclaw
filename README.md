@@ -67,7 +67,7 @@ cargo run -q -- --help
 | `make test` | Run tests |
 | `make update` | Update submodules to latest commits |
 
-All `make install-*` targets first run `git submodule update --init --recursive`, so installs resolve against the recorded `deps/*` revisions before `cargo install` or `npm link`.
+All `make install-*` targets first run `git submodule update --init --recursive`, so installs resolve against the recorded `deps/*` revisions before `cargo install`, `npm ci`, or `npm link`.
 
 ## Usage
 

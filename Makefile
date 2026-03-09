@@ -33,7 +33,7 @@ install-acomm: submodule-init
 
 # acomm TypeScript TUI — installs npm deps and links acomm-tui into PATH
 install-acomm-tui: submodule-init
-	cd deps/acomm/tui && npm install --legacy-peer-deps
+	cd deps/acomm/tui && npm ci --legacy-peer-deps
 	cd deps/acomm/tui && npm link
 
 # Local build only (outputs to target/, does not install)

@@ -39,7 +39,7 @@ fn install_targets_refresh_submodules_before_installing() {
         ("install-acomm", "cargo install --path deps/acomm"),
         (
             "install-acomm-tui",
-            "cd deps/acomm/tui && npm install --legacy-peer-deps",
+            "cd deps/acomm/tui && npm ci --legacy-peer-deps",
         ),
     ];
 
