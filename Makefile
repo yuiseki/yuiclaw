@@ -16,23 +16,23 @@ submodule-init:
 	git submodule update --init --recursive
 
 # acore (required by acomm — install first)
-install-acore:
+install-acore: submodule-init
 	cargo install --path deps/acore
 
 # amem
-install-amem:
+install-amem: submodule-init
 	cargo install --path deps/amem
 
 # abeat
-install-abeat:
+install-abeat: submodule-init
 	cargo install --path deps/abeat
 
 # acomm Rust bridge (depends on acore)
-install-acomm:
+install-acomm: submodule-init
 	cargo install --path deps/acomm
 
 # acomm TypeScript TUI — installs npm deps and links acomm-tui into PATH
-install-acomm-tui:
+install-acomm-tui: submodule-init
 	cd deps/acomm/tui && npm install --legacy-peer-deps
 	cd deps/acomm/tui && npm link
 
