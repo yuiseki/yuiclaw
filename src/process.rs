@@ -334,6 +334,77 @@ fn shell_single_quote(path: &Path) -> String {
     format!("'{}'", raw.replace('\'', r"'\''"))
 }
 
+fn voice_command_operator_log_session<'a>(
+    action: &VoiceCommandOperatorAction,
+    runtime: &'a crate::voice_command::VoiceCommandOperatorRuntimeConfig,
+) -> Option<&'a str> {
+    match action {
+        VoiceCommandOperatorAction::LogsServer => Some(runtime.server_session.as_str()),
+        VoiceCommandOperatorAction::LogsListener => Some(runtime.listener_session.as_str()),
+        VoiceCommandOperatorAction::LogsAgent => Some(runtime.agent_session.as_str()),
+        VoiceCommandOperatorAction::LogsAgentTail => Some(runtime.agent_session.as_str()),
+        VoiceCommandOperatorAction::LogsOverlay => Some(runtime.overlay_session.as_str()),
+        VoiceCommandOperatorAction::LogsLockScreen => Some(runtime.lock_screen_session.as_str()),
+        _ => None,
+    }
+}
+
+fn voice_command_operator_attach_session<'a>(
+    action: &VoiceCommandOperatorAction,
+    runtime: &'a crate::voice_command::VoiceCommandOperatorRuntimeConfig,
+) -> Option<&'a str> {
+    match action {
+        VoiceCommandOperatorAction::AttachServer => Some(runtime.server_session.as_str()),
+        VoiceCommandOperatorAction::AttachListener => Some(runtime.listener_session.as_str()),
+        VoiceCommandOperatorAction::AttachAgent => Some(runtime.agent_session.as_str()),
+        VoiceCommandOperatorAction::AttachOverlay => Some(runtime.overlay_session.as_str()),
+        VoiceCommandOperatorAction::AttachLockScreen => Some(runtime.lock_screen_session.as_str()),
+        _ => None,
+    }
+}
+
+async fn show_tmux_logs(session: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if !tmux_has_session(session).await {
+        return Err(format!("tmux session not found: {session}").into());
+    }
+
+    let status = Command::new("tmux")
+        .arg("capture-pane")
+        .arg("-pt")
+        .arg(format!("{session}:0"))
+        .arg("-S")
+        .arg("-120")
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .await?;
+    if !status.success() {
+        return Err(format!("failed to capture tmux logs for session: {session}").into());
+    }
+    Ok(())
+}
+
+async fn attach_tmux_session(session: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if !tmux_has_session(session).await {
+        return Err(format!("tmux session not found: {session}").into());
+    }
+
+    let status = Command::new("tmux")
+        .arg("attach-session")
+        .arg("-t")
+        .arg(session)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .await?;
+    if !status.success() {
+        return Err(format!("failed to attach tmux session: {session}").into());
+    }
+    Ok(())
+}
+
 async fn run_direct_voice_command_operator_action(
     action: &VoiceCommandOperatorAction,
 ) -> Result<bool, Box<dyn std::error::Error>> {
@@ -497,6 +568,18 @@ async fn run_direct_voice_command_operator_action(
             } else {
                 println!("mic watcher not running: {}", runtime.watch_session);
             }
+            Ok(true)
+        }
+        _ if voice_command_operator_log_session(action, &runtime).is_some() => {
+            let session =
+                voice_command_operator_log_session(action, &runtime).expect("session checked");
+            show_tmux_logs(session).await?;
+            Ok(true)
+        }
+        _ if voice_command_operator_attach_session(action, &runtime).is_some() => {
+            let session =
+                voice_command_operator_attach_session(action, &runtime).expect("session checked");
+            attach_tmux_session(session).await?;
             Ok(true)
         }
         _ => Ok(false),
@@ -779,6 +862,9 @@ fn apply_spawn_workdir_if_configured(cmd: &mut std::process::Command, workdir: O
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::voice_command::{
+        VoiceCommandOperatorAction, resolve_voice_command_operator_runtime_config,
+    };
     use tempfile::tempdir;
 
     fn env_keys(keys: &[&str]) -> HashSet<String> {
@@ -874,5 +960,45 @@ mod tests {
         let mut cmd = std::process::Command::new("sh");
         apply_spawn_workdir_if_configured(&mut cmd, None);
         assert!(cmd.get_current_dir().is_none());
+    }
+
+    #[test]
+    fn operator_log_session_resolves_known_sessions() {
+        let runtime = resolve_voice_command_operator_runtime_config();
+        assert_eq!(
+            voice_command_operator_log_session(&VoiceCommandOperatorAction::LogsAgent, &runtime),
+            Some(runtime.agent_session.as_str())
+        );
+        assert_eq!(
+            voice_command_operator_log_session(&VoiceCommandOperatorAction::LogsOverlay, &runtime),
+            Some(runtime.overlay_session.as_str())
+        );
+        assert_eq!(
+            voice_command_operator_log_session(&VoiceCommandOperatorAction::StartAgent, &runtime),
+            None
+        );
+    }
+
+    #[test]
+    fn operator_attach_session_resolves_known_sessions() {
+        let runtime = resolve_voice_command_operator_runtime_config();
+        assert_eq!(
+            voice_command_operator_attach_session(
+                &VoiceCommandOperatorAction::AttachListener,
+                &runtime
+            ),
+            Some(runtime.listener_session.as_str())
+        );
+        assert_eq!(
+            voice_command_operator_attach_session(
+                &VoiceCommandOperatorAction::AttachLockScreen,
+                &runtime
+            ),
+            Some(runtime.lock_screen_session.as_str())
+        );
+        assert_eq!(
+            voice_command_operator_attach_session(&VoiceCommandOperatorAction::LogsAgent, &runtime),
+            None
+        );
     }
 }
