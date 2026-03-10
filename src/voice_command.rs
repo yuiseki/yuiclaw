@@ -24,6 +24,8 @@ pub enum VoiceCommandOperatorAction {
     Start,
     /// Restart the listener while keeping the server
     Restart,
+    /// Restart the listener and whisper server
+    RestartAll,
     /// Show the current voice command runtime status
     Status,
     /// Start the voice command agent
@@ -36,6 +38,8 @@ pub enum VoiceCommandOperatorAction {
     StopAgent,
     /// Stop listener, agent, overlay, and server
     StopAll,
+    /// Stop the listener
+    Stop,
     /// Start the overlay stack
     StartOverlay,
     /// Restart the overlay stack
@@ -54,6 +58,20 @@ pub enum VoiceCommandOperatorAction {
     LogsOverlay,
     /// Show recent lock-screen logs
     LogsLockScreen,
+    /// Attach to the whisper-server tmux session
+    AttachServer,
+    /// Attach to the listener tmux session
+    AttachListener,
+    /// Attach to the agent tmux session
+    AttachAgent,
+    /// Attach to the overlay tmux session
+    AttachOverlay,
+    /// Attach to the lock-screen tmux session
+    AttachLockScreen,
+    /// Start the DJI MIC MINI watcher
+    WatchMic,
+    /// Stop the DJI MIC MINI watcher
+    StopWatchMic,
 }
 
 impl VoiceCommandOperatorAction {
@@ -61,12 +79,14 @@ impl VoiceCommandOperatorAction {
         match self {
             Self::Start => "start",
             Self::Restart => "restart",
+            Self::RestartAll => "restart-all",
             Self::Status => "status",
             Self::StartAgent => "start-agent",
             Self::RestartAgent => "restart-agent",
             Self::RestartAgentAll => "restart-agent-all",
             Self::StopAgent => "stop-agent",
             Self::StopAll => "stop-all",
+            Self::Stop => "stop",
             Self::StartOverlay => "start-overlay",
             Self::RestartOverlay => "restart-overlay",
             Self::StopOverlay => "stop-overlay",
@@ -76,6 +96,13 @@ impl VoiceCommandOperatorAction {
             Self::LogsAgentTail => "logs-agent-tail",
             Self::LogsOverlay => "logs-overlay",
             Self::LogsLockScreen => "logs-lock-screen",
+            Self::AttachServer => "attach-server",
+            Self::AttachListener => "attach-listener",
+            Self::AttachAgent => "attach-agent",
+            Self::AttachOverlay => "attach-overlay",
+            Self::AttachLockScreen => "attach-lock-screen",
+            Self::WatchMic => "watch-mic",
+            Self::StopWatchMic => "stop-watch-mic",
         }
     }
 }

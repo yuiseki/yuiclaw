@@ -284,10 +284,12 @@ Manage the current tmux-based voice command runtime from `yuiclaw` while the bac
 yuiclaw voice-command operator status
 yuiclaw voice-command operator start
 yuiclaw voice-command operator restart
+yuiclaw voice-command operator restart-all
 yuiclaw voice-command operator start-agent
 yuiclaw voice-command operator restart-agent
 yuiclaw voice-command operator restart-agent-all
 yuiclaw voice-command operator stop-agent
+yuiclaw voice-command operator stop
 yuiclaw voice-command operator stop-all
 yuiclaw voice-command operator start-overlay
 yuiclaw voice-command operator restart-overlay
@@ -298,6 +300,13 @@ yuiclaw voice-command operator logs-agent
 yuiclaw voice-command operator logs-agent-tail
 yuiclaw voice-command operator logs-overlay
 yuiclaw voice-command operator logs-lock-screen
+yuiclaw voice-command operator attach-server
+yuiclaw voice-command operator attach-listener
+yuiclaw voice-command operator attach-agent
+yuiclaw voice-command operator attach-overlay
+yuiclaw voice-command operator attach-lock-screen
+yuiclaw voice-command operator watch-mic
+yuiclaw voice-command operator stop-watch-mic
 ```
 
 This keeps the public operator surface moving into `yuiclaw` without rewriting the tmux compatibility backend prematurely.

@@ -226,6 +226,18 @@ fn test_voice_command_operator_help_lists_agent_actions() {
         stdout.contains("start"),
         "voice-command operator help should mention start"
     );
+    assert!(
+        stdout.contains("restart-all"),
+        "voice-command operator help should mention restart-all"
+    );
+    assert!(
+        stdout.contains("stop-watch-mic"),
+        "voice-command operator help should mention stop-watch-mic"
+    );
+    assert!(
+        stdout.contains("attach-agent"),
+        "voice-command operator help should mention attach-agent"
+    );
 }
 
 // --- Daemon subcommand tests ---
