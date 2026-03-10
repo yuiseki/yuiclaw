@@ -308,6 +308,7 @@ pub async fn run_voice_command_operator(
 
     let status = Command::new(&spec.program)
         .args(&spec.args)
+        .envs(spec.env.iter().cloned())
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())

@@ -85,6 +85,7 @@ pub struct VoiceCommandOperatorLaunchSpec {
     pub program: OsString,
     pub script_path: PathBuf,
     pub args: Vec<OsString>,
+    pub env: Vec<(OsString, OsString)>,
 }
 
 pub fn resolve_workspaces_root() -> PathBuf {
@@ -148,11 +149,16 @@ pub fn build_voice_command_operator_launch_spec(
         script_path.clone().into_os_string(),
         OsString::from(action.as_tmux_command()),
     ];
+    let env = vec![(
+        OsString::from("YUICLAW_VOICE_COMMAND_OPERATOR_BACKEND"),
+        OsString::from("1"),
+    )];
 
     VoiceCommandOperatorLaunchSpec {
         program,
         script_path,
         args,
+        env,
     }
 }
 
@@ -261,6 +267,13 @@ mod tests {
                 OsString::from("/workspaces/tmp/whispercpp-listen/tmux_listen_only.sh"),
                 OsString::from("restart-agent-all"),
             ]
+        );
+        assert_eq!(
+            spec.env,
+            vec![(
+                OsString::from("YUICLAW_VOICE_COMMAND_OPERATOR_BACKEND"),
+                OsString::from("1")
+            )]
         );
 
         unsafe {
