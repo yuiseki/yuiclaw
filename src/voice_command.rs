@@ -20,6 +20,10 @@ pub enum VoiceCommandSubcommand {
 
 #[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub enum VoiceCommandOperatorAction {
+    /// Start whisper-server (if needed) and the listener
+    Start,
+    /// Restart the listener while keeping the server
+    Restart,
     /// Show the current voice command runtime status
     Status,
     /// Start the voice command agent
@@ -38,11 +42,25 @@ pub enum VoiceCommandOperatorAction {
     RestartOverlay,
     /// Stop the overlay stack
     StopOverlay,
+    /// Show recent whisper-server logs
+    LogsServer,
+    /// Show recent listener logs
+    LogsListener,
+    /// Show recent agent logs
+    LogsAgent,
+    /// Tail recent and live agent logs
+    LogsAgentTail,
+    /// Show recent overlay logs
+    LogsOverlay,
+    /// Show recent lock-screen logs
+    LogsLockScreen,
 }
 
 impl VoiceCommandOperatorAction {
     pub fn as_tmux_command(&self) -> &'static str {
         match self {
+            Self::Start => "start",
+            Self::Restart => "restart",
             Self::Status => "status",
             Self::StartAgent => "start-agent",
             Self::RestartAgent => "restart-agent",
@@ -52,6 +70,12 @@ impl VoiceCommandOperatorAction {
             Self::StartOverlay => "start-overlay",
             Self::RestartOverlay => "restart-overlay",
             Self::StopOverlay => "stop-overlay",
+            Self::LogsServer => "logs-server",
+            Self::LogsListener => "logs-listener",
+            Self::LogsAgent => "logs-agent",
+            Self::LogsAgentTail => "logs-agent-tail",
+            Self::LogsOverlay => "logs-overlay",
+            Self::LogsLockScreen => "logs-lock-screen",
         }
     }
 }
