@@ -286,6 +286,7 @@ yuiclaw voice-command operator start-agent
 yuiclaw voice-command operator restart-agent
 yuiclaw voice-command operator restart-agent-all
 yuiclaw voice-command operator stop-agent
+yuiclaw voice-command operator stop-all
 yuiclaw voice-command operator start-overlay
 yuiclaw voice-command operator restart-overlay
 yuiclaw voice-command operator stop-overlay

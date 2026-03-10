@@ -30,6 +30,8 @@ pub enum VoiceCommandOperatorAction {
     RestartAgentAll,
     /// Stop the voice command agent
     StopAgent,
+    /// Stop listener, agent, overlay, and server
+    StopAll,
     /// Start the overlay stack
     StartOverlay,
     /// Restart the overlay stack
@@ -46,6 +48,7 @@ impl VoiceCommandOperatorAction {
             Self::RestartAgent => "restart-agent",
             Self::RestartAgentAll => "restart-agent-all",
             Self::StopAgent => "stop-agent",
+            Self::StopAll => "stop-all",
             Self::StartOverlay => "start-overlay",
             Self::RestartOverlay => "restart-overlay",
             Self::StopOverlay => "stop-overlay",
