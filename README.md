@@ -89,6 +89,7 @@ Top-level commands:
 - `tick`: Run due `abeat` jobs (intended for cron/systemd).
 - `pub <message> [--channel CHANNEL]`: Publish a message to the running bridge.
 - `reset`: Reset the active session (clears conversation history and agent state).
+- `voice-command [--run-command TEXT] [-- <extra args...>]`: Launch the voice command operator entrypoint.
 
 ## Quick Start
 
@@ -259,6 +260,18 @@ Resets the active session while the bridge keeps running. Clears the in-memory c
 ```bash
 yuiclaw reset
 ```
+
+### `yuiclaw voice-command`
+
+Launch the current voice command operator entrypoint from `yuiclaw`.
+
+```bash
+yuiclaw voice-command
+yuiclaw voice-command --run-command "システムおはよう"
+yuiclaw voice-command -- --debug --source <pipewire-source>
+```
+
+This is the migration bridge toward moving operator ownership into `yuiclaw` while the compatibility runtime still lives under `tmp/whispercpp-listen`.
 
 If no bridge is running, the command exits cleanly with a notice.
 

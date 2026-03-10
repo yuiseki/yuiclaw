@@ -1,4 +1,5 @@
 use crate::components::{self, SOCKET_PATH};
+use crate::voice_command::build_voice_command_launch_spec;
 use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
@@ -193,11 +194,7 @@ pub async fn stop_bridge() -> Result<(), Box<dyn std::error::Error>> {
 async fn stop_all_adapters() {
     for spec in &CHANNEL_ADAPTER_SPECS {
         let pattern = format!("acomm.*{}", spec.adapter_flag);
-        let _ = Command::new("pkill")
-            .arg("-f")
-            .arg(&pattern)
-            .status()
-            .await;
+        let _ = Command::new("pkill").arg("-f").arg(&pattern).status().await;
     }
 }
 
@@ -261,6 +258,35 @@ pub async fn reset_session() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("Session reset.");
+    Ok(())
+}
+
+/// Launch the current voice command operator compatibility entrypoint.
+pub async fn run_voice_command(
+    run_command: Option<&str>,
+    extra_args: &[String],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let spec = build_voice_command_launch_spec(run_command, extra_args);
+    if !spec.script_path.is_file() {
+        return Err(format!(
+            "voice command entrypoint not found: {}",
+            spec.script_path.display()
+        )
+        .into());
+    }
+
+    let status = Command::new(&spec.program)
+        .args(&spec.args)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .await?;
+
+    if !status.success() {
+        return Err(format!("voice command exited with status {}", status).into());
+    }
+
     Ok(())
 }
 
@@ -395,8 +421,7 @@ async fn ensure_bridge_running_for_adapters() -> bool {
         }
 
         // Wrap the bridge in a supervisor loop so it auto-restarts on exit.
-        let bridge_script =
-            "while true; do acomm --bridge; \
+        let bridge_script = "while true; do acomm --bridge; \
              echo '[yuiclaw] bridge exited, restarting in 3s...' >&2; sleep 3; done";
         let mut cmd = std::process::Command::new("bash");
         cmd.arg("-c")
@@ -499,10 +524,7 @@ fn daemon_session_workdir() -> Option<PathBuf> {
     resolve_daemon_session_workdir_from_env_value(std::env::var("YUICLAW_HOME").ok())
 }
 
-fn apply_spawn_workdir_if_configured(
-    cmd: &mut std::process::Command,
-    workdir: Option<&Path>,
-) {
+fn apply_spawn_workdir_if_configured(cmd: &mut std::process::Command, workdir: Option<&Path>) {
     if let Some(dir) = workdir {
         cmd.current_dir(dir);
     }
@@ -587,8 +609,9 @@ mod tests {
 
     #[test]
     fn resolve_daemon_session_workdir_from_env_value_returns_trimmed_path() {
-        let path = resolve_daemon_session_workdir_from_env_value(Some(" /tmp/yuiclaw-home ".into()))
-            .expect("path should be parsed");
+        let path =
+            resolve_daemon_session_workdir_from_env_value(Some(" /tmp/yuiclaw-home ".into()))
+                .expect("path should be parsed");
         assert_eq!(path, PathBuf::from("/tmp/yuiclaw-home"));
     }
 

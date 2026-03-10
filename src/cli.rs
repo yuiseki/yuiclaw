@@ -90,4 +90,13 @@ pub enum Commands {
     },
     /// 実行中の対話セッションをリセットする (会話履歴・エージェントセッションをクリア)
     Reset,
+    /// 音声コマンド operator entrypoint を起動する
+    VoiceCommand {
+        /// 1回だけコマンド文字列を実行して終了する
+        #[arg(long)]
+        run_command: Option<String>,
+        /// voice_command_loop.py に追加でそのまま渡す引数
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        extra_args: Vec<String>,
+    },
 }

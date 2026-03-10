@@ -4,6 +4,7 @@ mod env;
 mod init;
 mod process;
 mod status;
+mod voice_command;
 
 use clap::Parser;
 use cli::{Cli, Commands, DaemonCommands};
@@ -42,6 +43,10 @@ async fn main() {
         Commands::Tick => process::run_tick().await,
         Commands::Pub { message, channel } => process::publish(&message, channel.as_deref()).await,
         Commands::Reset => process::reset_session().await,
+        Commands::VoiceCommand {
+            run_command,
+            extra_args,
+        } => process::run_voice_command(run_command.as_deref(), &extra_args).await,
     };
 
     if let Err(e) = result {

@@ -152,6 +152,35 @@ fn test_restart_subcommand_help() {
     );
 }
 
+#[test]
+fn test_main_help_lists_voice_command_subcommand() {
+    let output = yuiclaw_bin()
+        .arg("--help")
+        .output()
+        .expect("failed to run yuiclaw --help");
+    assert!(output.status.success(), "yuiclaw --help should exit 0");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("voice-command"),
+        "main help should list voice-command subcommand"
+    );
+}
+
+#[test]
+fn test_voice_command_subcommand_help() {
+    let output = yuiclaw_bin()
+        .arg("voice-command")
+        .arg("--help")
+        .output()
+        .expect("failed to run yuiclaw voice-command --help");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("--run-command"),
+        "voice-command help should mention --run-command"
+    );
+}
+
 // --- Daemon subcommand tests ---
 
 #[test]
@@ -174,12 +203,21 @@ fn test_daemon_help() {
         .arg("--help")
         .output()
         .expect("failed to run yuiclaw daemon --help");
-    assert!(output.status.success(), "yuiclaw daemon --help should exit 0");
+    assert!(
+        output.status.success(),
+        "yuiclaw daemon --help should exit 0"
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("start"), "daemon help should mention start");
     assert!(stdout.contains("stop"), "daemon help should mention stop");
-    assert!(stdout.contains("status"), "daemon help should mention status");
-    assert!(stdout.contains("restart"), "daemon help should mention restart");
+    assert!(
+        stdout.contains("status"),
+        "daemon help should mention status"
+    );
+    assert!(
+        stdout.contains("restart"),
+        "daemon help should mention restart"
+    );
 }
 
 #[test]
@@ -218,7 +256,8 @@ fn test_daemon_status_json() {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     // Should be valid JSON
-    let _json: serde_json::Value = serde_json::from_str(&stdout).expect("output should be valid JSON");
+    let _json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("output should be valid JSON");
 }
 
 #[test]
