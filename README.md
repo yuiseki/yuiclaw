@@ -270,11 +270,11 @@ Launch the current voice command operator entrypoint from `yuiclaw`.
 yuiclaw voice-command
 yuiclaw voice-command --run-command "システムおはよう"
 yuiclaw voice-command -- --debug --source <pipewire-source>
+printf 'your_password\nパスワード\n' | yuiclaw voice-command -- --encrypt-biometric-password-stdin
+yuiclaw voice-command -- --request-biometric-lock
 ```
 
 This is the migration bridge toward moving operator ownership into `yuiclaw` while the compatibility runtime still lives under `tmp/whispercpp-listen`.
-
-If no bridge is running, the command exits cleanly with a notice.
 
 ### `yuiclaw voice-command operator`
 
