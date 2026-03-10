@@ -1,5 +1,8 @@
 use crate::components::{self, SOCKET_PATH};
-use crate::voice_command::build_voice_command_launch_spec;
+use crate::voice_command::{
+    VoiceCommandOperatorAction, build_voice_command_launch_spec,
+    build_voice_command_operator_launch_spec,
+};
 use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
@@ -285,6 +288,34 @@ pub async fn run_voice_command(
 
     if !status.success() {
         return Err(format!("voice command exited with status {}", status).into());
+    }
+
+    Ok(())
+}
+
+/// Launch the current voice command tmux/operator compatibility entrypoint.
+pub async fn run_voice_command_operator(
+    action: &VoiceCommandOperatorAction,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let spec = build_voice_command_operator_launch_spec(action);
+    if !spec.script_path.is_file() {
+        return Err(format!(
+            "voice command operator entrypoint not found: {}",
+            spec.script_path.display()
+        )
+        .into());
+    }
+
+    let status = Command::new(&spec.program)
+        .args(&spec.args)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .await?;
+
+    if !status.success() {
+        return Err(format!("voice command operator exited with status {}", status).into());
     }
 
     Ok(())

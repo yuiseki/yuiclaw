@@ -1,3 +1,4 @@
+use crate::voice_command::VoiceCommandSubcommand;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
@@ -92,6 +93,8 @@ pub enum Commands {
     Reset,
     /// 音声コマンド operator entrypoint を起動する
     VoiceCommand {
+        #[command(subcommand)]
+        action: Option<VoiceCommandSubcommand>,
         /// 1回だけコマンド文字列を実行して終了する
         #[arg(long)]
         run_command: Option<String>,

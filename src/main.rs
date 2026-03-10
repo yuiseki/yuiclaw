@@ -8,6 +8,7 @@ mod voice_command;
 
 use clap::Parser;
 use cli::{Cli, Commands, DaemonCommands};
+use voice_command::VoiceCommandSubcommand;
 
 #[tokio::main]
 async fn main() {
@@ -44,9 +45,15 @@ async fn main() {
         Commands::Pub { message, channel } => process::publish(&message, channel.as_deref()).await,
         Commands::Reset => process::reset_session().await,
         Commands::VoiceCommand {
+            action,
             run_command,
             extra_args,
-        } => process::run_voice_command(run_command.as_deref(), &extra_args).await,
+        } => match action {
+            Some(VoiceCommandSubcommand::Operator { action }) => {
+                process::run_voice_command_operator(&action).await
+            }
+            None => process::run_voice_command(run_command.as_deref(), &extra_args).await,
+        },
     };
 
     if let Err(e) = result {

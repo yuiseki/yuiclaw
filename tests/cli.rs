@@ -181,6 +181,41 @@ fn test_voice_command_subcommand_help() {
     );
 }
 
+#[test]
+fn test_voice_command_help_lists_operator_subcommand() {
+    let output = yuiclaw_bin()
+        .arg("voice-command")
+        .arg("--help")
+        .output()
+        .expect("failed to run yuiclaw voice-command --help");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("operator"),
+        "voice-command help should mention operator subcommand"
+    );
+}
+
+#[test]
+fn test_voice_command_operator_help_lists_agent_actions() {
+    let output = yuiclaw_bin()
+        .arg("voice-command")
+        .arg("operator")
+        .arg("--help")
+        .output()
+        .expect("failed to run yuiclaw voice-command operator --help");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("restart-agent"),
+        "voice-command operator help should mention restart-agent"
+    );
+    assert!(
+        stdout.contains("status"),
+        "voice-command operator help should mention status"
+    );
+}
+
 // --- Daemon subcommand tests ---
 
 #[test]

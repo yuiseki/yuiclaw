@@ -90,6 +90,7 @@ Top-level commands:
 - `pub <message> [--channel CHANNEL]`: Publish a message to the running bridge.
 - `reset`: Reset the active session (clears conversation history and agent state).
 - `voice-command [--run-command TEXT] [-- <extra args...>]`: Launch the voice command operator entrypoint.
+- `voice-command operator <action>`: Manage the compatibility tmux/operator runtime from `yuiclaw`.
 
 ## Quick Start
 
@@ -274,6 +275,23 @@ yuiclaw voice-command -- --debug --source <pipewire-source>
 This is the migration bridge toward moving operator ownership into `yuiclaw` while the compatibility runtime still lives under `tmp/whispercpp-listen`.
 
 If no bridge is running, the command exits cleanly with a notice.
+
+### `yuiclaw voice-command operator`
+
+Manage the current tmux-based voice command runtime from `yuiclaw` while the backend still lives in `tmp/whispercpp-listen/tmux_listen_only.sh`.
+
+```bash
+yuiclaw voice-command operator status
+yuiclaw voice-command operator start-agent
+yuiclaw voice-command operator restart-agent
+yuiclaw voice-command operator restart-agent-all
+yuiclaw voice-command operator stop-agent
+yuiclaw voice-command operator start-overlay
+yuiclaw voice-command operator restart-overlay
+yuiclaw voice-command operator stop-overlay
+```
+
+This keeps the public operator surface moving into `yuiclaw` without rewriting the tmux compatibility backend prematurely.
 
 ## Architecture
 
