@@ -1,7 +1,7 @@
 use crate::components::{self, SOCKET_PATH};
 use crate::voice_command::{
     VoiceCommandOperatorAction, build_voice_command_launch_spec,
-    build_voice_command_operator_launch_spec,
+    build_voice_command_operator_launch_spec, resolve_voice_command_operator_runtime_config,
 };
 use std::collections::HashSet;
 use std::path::Path;
@@ -293,10 +293,224 @@ pub async fn run_voice_command(
     Ok(())
 }
 
+async fn tmux_has_session(session: &str) -> bool {
+    Command::new("tmux")
+        .arg("has-session")
+        .arg("-t")
+        .arg(session)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+async fn tmux_kill_session_if_exists(
+    session: &str,
+    stopped_message: &str,
+    missing_message: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if !tmux_has_session(session).await {
+        println!("{missing_message}");
+        return Ok(());
+    }
+
+    let status = Command::new("tmux")
+        .arg("kill-session")
+        .arg("-t")
+        .arg(session)
+        .status()
+        .await?;
+    if !status.success() {
+        return Err(format!("failed to kill tmux session: {session}").into());
+    }
+    println!("{stopped_message}");
+    Ok(())
+}
+
+fn shell_single_quote(path: &Path) -> String {
+    let raw = path.display().to_string();
+    format!("'{}'", raw.replace('\'', r"'\''"))
+}
+
+async fn run_direct_voice_command_operator_action(
+    action: &VoiceCommandOperatorAction,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let runtime = resolve_voice_command_operator_runtime_config();
+    match action {
+        VoiceCommandOperatorAction::Stop => {
+            tmux_kill_session_if_exists(
+                &runtime.listener_session,
+                &format!("listener stopped: {}", runtime.listener_session),
+                &format!("listener session not running: {}", runtime.listener_session),
+            )
+            .await?;
+            Ok(true)
+        }
+        VoiceCommandOperatorAction::StopAgent => {
+            tmux_kill_session_if_exists(
+                &runtime.agent_session,
+                &format!("agent stopped: {}", runtime.agent_session),
+                &format!("agent session not running: {}", runtime.agent_session),
+            )
+            .await?;
+            Ok(true)
+        }
+        VoiceCommandOperatorAction::StopOverlay => {
+            tmux_kill_session_if_exists(
+                &runtime.overlay_session,
+                &format!("overlay stopped: {}", runtime.overlay_session),
+                &format!("overlay session not running: {}", runtime.overlay_session),
+            )
+            .await?;
+            if runtime.lock_screen_port != "0" {
+                tmux_kill_session_if_exists(
+                    &runtime.lock_screen_session,
+                    &format!("lock screen stopped: {}", runtime.lock_screen_session),
+                    &format!(
+                        "lock screen session not running: {}",
+                        runtime.lock_screen_session
+                    ),
+                )
+                .await?;
+            }
+            for session in &runtime.legacy_overlay_sessions {
+                if tmux_has_session(session).await {
+                    let status = Command::new("tmux")
+                        .arg("kill-session")
+                        .arg("-t")
+                        .arg(session)
+                        .status()
+                        .await?;
+                    if !status.success() {
+                        return Err(
+                            format!("failed to kill legacy overlay session: {session}").into()
+                        );
+                    }
+                    println!("legacy overlay session stopped: {session}");
+                }
+            }
+            Ok(true)
+        }
+        VoiceCommandOperatorAction::StopAll => {
+            tmux_kill_session_if_exists(
+                &runtime.agent_session,
+                &format!("agent stopped: {}", runtime.agent_session),
+                &format!("agent session not running: {}", runtime.agent_session),
+            )
+            .await?;
+            tmux_kill_session_if_exists(
+                &runtime.listener_session,
+                &format!("listener stopped: {}", runtime.listener_session),
+                &format!("listener session not running: {}", runtime.listener_session),
+            )
+            .await?;
+            tmux_kill_session_if_exists(
+                &runtime.overlay_session,
+                &format!("overlay stopped: {}", runtime.overlay_session),
+                &format!("overlay session not running: {}", runtime.overlay_session),
+            )
+            .await?;
+            if runtime.lock_screen_port != "0" {
+                tmux_kill_session_if_exists(
+                    &runtime.lock_screen_session,
+                    &format!("lock screen stopped: {}", runtime.lock_screen_session),
+                    &format!(
+                        "lock screen session not running: {}",
+                        runtime.lock_screen_session
+                    ),
+                )
+                .await?;
+            }
+            for session in &runtime.legacy_overlay_sessions {
+                if tmux_has_session(session).await {
+                    let status = Command::new("tmux")
+                        .arg("kill-session")
+                        .arg("-t")
+                        .arg(session)
+                        .status()
+                        .await?;
+                    if !status.success() {
+                        return Err(
+                            format!("failed to kill legacy overlay session: {session}").into()
+                        );
+                    }
+                    println!("legacy overlay session stopped: {session}");
+                }
+            }
+            tmux_kill_session_if_exists(
+                &runtime.server_session,
+                &format!("server stopped: {}", runtime.server_session),
+                &format!("server session not running: {}", runtime.server_session),
+            )
+            .await?;
+            Ok(true)
+        }
+        VoiceCommandOperatorAction::WatchMic => {
+            if tmux_has_session(&runtime.watch_session).await {
+                println!("mic watcher already running: {}", runtime.watch_session);
+                return Ok(true);
+            }
+            if !runtime.watch_script_path.is_file() {
+                return Err(format!(
+                    "watch script not found: {}",
+                    runtime.watch_script_path.display()
+                )
+                .into());
+            }
+            let command = format!("bash {}", shell_single_quote(&runtime.watch_script_path));
+            let status = Command::new("tmux")
+                .arg("new-session")
+                .arg("-d")
+                .arg("-s")
+                .arg(&runtime.watch_session)
+                .arg(command)
+                .status()
+                .await?;
+            if !status.success() {
+                return Err(format!(
+                    "failed to start mic watcher session: {}",
+                    runtime.watch_session
+                )
+                .into());
+            }
+            println!("mic watcher started: {}", runtime.watch_session);
+            Ok(true)
+        }
+        VoiceCommandOperatorAction::StopWatchMic => {
+            if tmux_has_session(&runtime.watch_session).await {
+                let status = Command::new("tmux")
+                    .arg("kill-session")
+                    .arg("-t")
+                    .arg(&runtime.watch_session)
+                    .status()
+                    .await?;
+                if !status.success() {
+                    return Err(format!(
+                        "failed to kill mic watcher session: {}",
+                        runtime.watch_session
+                    )
+                    .into());
+                }
+                println!("mic watcher stopped: {}", runtime.watch_session);
+            } else {
+                println!("mic watcher not running: {}", runtime.watch_session);
+            }
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
+}
+
 /// Launch the current voice command tmux/operator compatibility entrypoint.
 pub async fn run_voice_command_operator(
     action: &VoiceCommandOperatorAction,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if run_direct_voice_command_operator_action(action).await? {
+        return Ok(());
+    }
+
     let spec = build_voice_command_operator_launch_spec(action);
     if !spec.script_path.is_file() {
         return Err(format!(
