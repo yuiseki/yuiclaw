@@ -278,7 +278,7 @@ This is the migration bridge toward moving operator ownership into `yuiclaw` whi
 
 ### `yuiclaw voice-command operator`
 
-Manage the current tmux-based voice command runtime from `yuiclaw` while the backend still lives in `tmp/whispercpp-listen/tmux_listen_only.sh`.
+Manage the current tmux-based voice command runtime directly from `yuiclaw`.
 
 ```bash
 yuiclaw voice-command operator status
@@ -309,11 +309,9 @@ yuiclaw voice-command operator watch-mic
 yuiclaw voice-command operator stop-watch-mic
 ```
 
-This keeps the public operator surface moving into `yuiclaw` without rewriting the tmux compatibility backend prematurely.
-The current direct-backend slice handles `status`, `start-overlay`, `restart-overlay`, `stop`,
-`stop-agent`, `stop-overlay`, `stop-all`, `watch-mic`, `stop-watch-mic`, `logs-*`, and
-`attach-*` from `yuiclaw` itself; the remaining start/restart actions still bridge through
-`tmp/whispercpp-listen/tmux_listen_only.sh`.
+All public operator actions now run from `yuiclaw` itself. The legacy
+`tmp/whispercpp-listen/tmux_listen_only.sh` entrypoint remains only as a compatibility wrapper
+for older callers.
 
 ## Architecture
 

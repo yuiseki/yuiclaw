@@ -1,7 +1,7 @@
 use crate::components::{self, SOCKET_PATH};
 use crate::voice_command::{
     VoiceCommandOperatorAction, build_voice_command_launch_spec,
-    build_voice_command_operator_launch_spec, resolve_voice_command_operator_runtime_config,
+    resolve_voice_command_operator_runtime_config,
 };
 use std::collections::HashSet;
 use std::path::Path;
@@ -819,6 +819,515 @@ fn require_command(cmd: &str) -> Result<(), Box<dyn std::error::Error>> {
     Err(format!("required command not found: {cmd}").into())
 }
 
+fn env_var_nonempty(key: &str) -> Option<String> {
+    std::env::var(key).ok().filter(|value| !value.is_empty())
+}
+
+fn env_flag_enabled(key: &str, default: bool) -> bool {
+    std::env::var(key)
+        .ok()
+        .map(|value| value == "1")
+        .unwrap_or(default)
+}
+
+fn push_optional_arg(args: &mut Vec<String>, flag: &str, value: Option<String>) {
+    if let Some(value) = value {
+        args.push(flag.to_string());
+        args.push(value);
+    }
+}
+
+fn shell_join_args(args: &[String]) -> String {
+    args.iter()
+        .map(|arg| shell_single_quote_str(arg))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn build_server_command_args(
+    runtime: &crate::voice_command::VoiceCommandOperatorRuntimeConfig,
+) -> Vec<String> {
+    vec![
+        runtime.server_bin.display().to_string(),
+        "--host".to_string(),
+        runtime.server_host.clone(),
+        "--port".to_string(),
+        runtime.server_port.clone(),
+        "-m".to_string(),
+        runtime.server_model.display().to_string(),
+        "-l".to_string(),
+        runtime.whisper_language.clone(),
+        "-nt".to_string(),
+        "-ng".to_string(),
+    ]
+}
+
+fn build_listener_command_args(
+    runtime: &crate::voice_command::VoiceCommandOperatorRuntimeConfig,
+) -> Vec<String> {
+    let mut args = vec![
+        "python3".to_string(),
+        runtime.listener_script_path.display().to_string(),
+        "--tmp-dir".to_string(),
+        runtime.whisper_listen_tmp_dir.display().to_string(),
+    ];
+    if runtime.stt_backend == "moonshine" {
+        args.push("--model-size".to_string());
+        args.push(runtime.moonshine_model_size.clone());
+    } else {
+        args.push("--server".to_string());
+        args.push(runtime.server_url.clone());
+        args.push("--language".to_string());
+        args.push(runtime.whisper_language.clone());
+        push_optional_arg(
+            &mut args,
+            "--stt-prompt",
+            env_var_nonempty("WHISPER_LISTEN_STT_PROMPT"),
+        );
+    }
+    push_optional_arg(&mut args, "--source", runtime.whisper_mic_source.clone());
+    if env_flag_enabled("WHISPER_LISTEN_DEBUG", false) {
+        args.push("--debug".to_string());
+    }
+    push_optional_arg(
+        &mut args,
+        "--max-run-sec",
+        env_var_nonempty("WHISPER_LISTEN_MAX_RUN_SEC"),
+    );
+    push_optional_arg(
+        &mut args,
+        "--max-segments",
+        env_var_nonempty("WHISPER_LISTEN_MAX_SEGMENTS"),
+    );
+    args
+}
+
+fn build_agent_command_args(
+    runtime: &crate::voice_command::VoiceCommandOperatorRuntimeConfig,
+) -> Vec<String> {
+    let mut args = vec![
+        "python3".to_string(),
+        runtime.agent_script_path.display().to_string(),
+        "--tmp-dir".to_string(),
+        runtime.whisper_listen_tmp_dir.display().to_string(),
+    ];
+    if runtime.stt_backend == "moonshine" {
+        args.push("--stt-backend".to_string());
+        args.push("moonshine".to_string());
+        args.push("--model-size".to_string());
+        args.push(runtime.moonshine_model_size.clone());
+    } else {
+        args.push("--stt-backend".to_string());
+        args.push("whisper".to_string());
+        args.push("--server".to_string());
+        args.push(runtime.server_url.clone());
+        args.push("--language".to_string());
+        args.push(runtime.whisper_language.clone());
+        push_optional_arg(
+            &mut args,
+            "--stt-prompt",
+            env_var_nonempty("WHISPER_AGENT_STT_PROMPT"),
+        );
+    }
+    push_optional_arg(&mut args, "--source", runtime.whisper_mic_source.clone());
+    if env_flag_enabled("WHISPER_AGENT_DEBUG", false) {
+        args.push("--debug".to_string());
+    }
+    push_optional_arg(
+        &mut args,
+        "--max-run-sec",
+        env_var_nonempty("WHISPER_AGENT_MAX_RUN_SEC"),
+    );
+    push_optional_arg(
+        &mut args,
+        "--max-segments",
+        env_var_nonempty("WHISPER_AGENT_MAX_SEGMENTS"),
+    );
+    push_optional_arg(
+        &mut args,
+        "--calibration-ms",
+        env_var_nonempty("WHISPER_AGENT_CALIBRATION_MS"),
+    );
+    args.push("--pre-roll-ms".to_string());
+    args.push(env_var_nonempty("WHISPER_AGENT_PRE_ROLL_MS").unwrap_or_else(|| "500".to_string()));
+    push_optional_arg(
+        &mut args,
+        "--start-rms",
+        env_var_nonempty("WHISPER_AGENT_START_RMS"),
+    );
+    push_optional_arg(
+        &mut args,
+        "--stop-rms",
+        env_var_nonempty("WHISPER_AGENT_STOP_RMS"),
+    );
+    push_optional_arg(
+        &mut args,
+        "--start-rms-min",
+        env_var_nonempty("WHISPER_AGENT_START_RMS_MIN"),
+    );
+    push_optional_arg(
+        &mut args,
+        "--start-rms-max",
+        env_var_nonempty("WHISPER_AGENT_START_RMS_MAX"),
+    );
+    push_optional_arg(
+        &mut args,
+        "--stop-rms-min",
+        env_var_nonempty("WHISPER_AGENT_STOP_RMS_MIN"),
+    );
+    push_optional_arg(
+        &mut args,
+        "--stop-rms-max",
+        env_var_nonempty("WHISPER_AGENT_STOP_RMS_MAX"),
+    );
+    if env_flag_enabled("WHISPER_AGENT_NO_VOICE", false) {
+        args.push("--no-voice".to_string());
+    }
+    if env_flag_enabled("WHISPER_AGENT_WAIT_ACK_AFTER_ACTION", false) {
+        args.push("--wait-ack-after-action".to_string());
+    }
+    push_optional_arg(
+        &mut args,
+        "--audio-sink",
+        env_var_nonempty("WHISPER_AGENT_AUDIO_SINK"),
+    );
+    if env_flag_enabled("WHISPER_AGENT_NOTIFY_PROGRESS", false) {
+        args.push("--notify-progress".to_string());
+    }
+    if runtime.whisper_agent_no_overlay {
+        args.push("--no-overlay".to_string());
+    } else {
+        args.push("--overlay-ipc-host".to_string());
+        args.push(runtime.overlay_host.clone());
+        args.push("--overlay-ipc-port".to_string());
+        args.push(runtime.overlay_port.clone());
+        if runtime.lock_screen_port != "0" {
+            args.push("--lock-screen-ipc-port".to_string());
+            args.push(runtime.lock_screen_port.clone());
+        }
+    }
+    if env_flag_enabled("WHISPER_AGENT_SPEAKER_ID", true) {
+        args.push("--speaker-id".to_string());
+        args.push("--speaker-master".to_string());
+        args.push(
+            env_var_nonempty("WHISPER_AGENT_SPEAKER_MASTER").unwrap_or_else(|| {
+                runtime
+                    .workspaces_root
+                    .join("tmp/whispercpp-listen/tests/fixtures/master_voiceprint.npy")
+                    .display()
+                    .to_string()
+            }),
+        );
+        args.push("--speaker-threshold".to_string());
+        args.push(
+            env_var_nonempty("WHISPER_AGENT_SPEAKER_THRESHOLD")
+                .unwrap_or_else(|| "0.60".to_string()),
+        );
+        args.push("--speaker-topk".to_string());
+        args.push(
+            env_var_nonempty("WHISPER_AGENT_SPEAKER_TOPK").unwrap_or_else(|| "5".to_string()),
+        );
+        args.push("--speaker-device".to_string());
+        args.push(
+            env_var_nonempty("WHISPER_AGENT_SPEAKER_DEVICE").unwrap_or_else(|| "cpu".to_string()),
+        );
+    }
+    if env_flag_enabled("WHISPER_AGENT_BIOMETRIC_LOCK", true) {
+        args.push("--biometric-lock".to_string());
+    }
+    if env_flag_enabled("WHISPER_AGENT_BIOMETRIC_START_LOCKED", false) {
+        args.push("--biometric-start-locked".to_string());
+    }
+    push_optional_arg(
+        &mut args,
+        "--biometric-command-idle-lock-sec",
+        env_var_nonempty("WHISPER_AGENT_BIOMETRIC_COMMAND_IDLE_LOCK_SEC"),
+    );
+    push_optional_arg(
+        &mut args,
+        "--biometric-face-absent-lock-sec",
+        env_var_nonempty("WHISPER_AGENT_BIOMETRIC_FACE_ABSENT_LOCK_SEC"),
+    );
+    push_optional_arg(
+        &mut args,
+        "--biometric-unlock-face-fresh-ms",
+        env_var_nonempty("WHISPER_AGENT_BIOMETRIC_UNLOCK_FACE_FRESH_MS"),
+    );
+    push_optional_arg(
+        &mut args,
+        "--biometric-poll-sec",
+        env_var_nonempty("WHISPER_AGENT_BIOMETRIC_POLL_SEC"),
+    );
+    push_optional_arg(
+        &mut args,
+        "--god-mode-status-url",
+        env_var_nonempty("WHISPER_AGENT_GOD_MODE_STATUS_URL"),
+    );
+    push_optional_arg(
+        &mut args,
+        "--biometric-password-file",
+        runtime
+            .biometric_password_file
+            .as_ref()
+            .map(|path| path.display().to_string()),
+    );
+    push_optional_arg(
+        &mut args,
+        "--biometric-password-public-key",
+        std::env::var_os("WHISPER_AGENT_BIOMETRIC_PASSWORD_PUBLIC_KEY")
+            .filter(|value| !value.is_empty())
+            .map(|value| PathBuf::from(value).display().to_string()),
+    );
+    push_optional_arg(
+        &mut args,
+        "--biometric-password-private-key",
+        runtime
+            .biometric_password_private_key
+            .as_ref()
+            .map(|path| path.display().to_string()),
+    );
+    push_optional_arg(
+        &mut args,
+        "--biometric-lock-signal-file",
+        std::env::var_os("WHISPER_AGENT_BIOMETRIC_LOCK_SIGNAL_FILE")
+            .filter(|value| !value.is_empty())
+            .map(|value| PathBuf::from(value).display().to_string()),
+    );
+    push_optional_arg(
+        &mut args,
+        "--biometric-unlock-signal-file",
+        runtime
+            .biometric_unlock_signal_file
+            .as_ref()
+            .map(|path| path.display().to_string()),
+    );
+    args
+}
+
+async fn wait_http_endpoint_ready(url: &str, timeout_sec: u64) -> bool {
+    for _ in 0..(timeout_sec * 2) {
+        if http_endpoint_ready(url).await {
+            return true;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    false
+}
+
+async fn stop_listener_runtime(
+    runtime: &crate::voice_command::VoiceCommandOperatorRuntimeConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    tmux_kill_session_if_exists(
+        &runtime.listener_session,
+        &format!("listener stopped: {}", runtime.listener_session),
+        &format!("listener session not running: {}", runtime.listener_session),
+    )
+    .await
+}
+
+async fn stop_agent_runtime(
+    runtime: &crate::voice_command::VoiceCommandOperatorRuntimeConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    tmux_kill_session_if_exists(
+        &runtime.agent_session,
+        &format!("agent stopped: {}", runtime.agent_session),
+        &format!("agent session not running: {}", runtime.agent_session),
+    )
+    .await
+}
+
+async fn stop_server_runtime(
+    runtime: &crate::voice_command::VoiceCommandOperatorRuntimeConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    tmux_kill_session_if_exists(
+        &runtime.server_session,
+        &format!("server stopped: {}", runtime.server_session),
+        &format!("server session not running: {}", runtime.server_session),
+    )
+    .await
+}
+
+async fn start_server_runtime(
+    runtime: &crate::voice_command::VoiceCommandOperatorRuntimeConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if runtime.stt_backend == "moonshine" {
+        println!("STT_BACKEND=moonshine: skipping whisper-server (not needed)");
+        return Ok(());
+    }
+
+    if !runtime.server_bin.is_file() {
+        return Err(format!(
+            "whisper-server binary not executable: {}",
+            runtime.server_bin.display()
+        )
+        .into());
+    }
+    if !runtime.server_model.is_file() {
+        return Err(format!("model file not found: {}", runtime.server_model.display()).into());
+    }
+
+    if tmux_has_session(&runtime.server_session).await {
+        println!(
+            "server tmux session already exists: {}",
+            runtime.server_session
+        );
+        return Ok(());
+    }
+
+    if http_endpoint_ready(&runtime.server_url).await {
+        println!(
+            "server endpoint already ready at {} (outside managed tmux session?)",
+            runtime.server_url
+        );
+        return Ok(());
+    }
+
+    let command = format!(
+        "exec {}",
+        shell_join_args(&build_server_command_args(runtime))
+    );
+    println!(
+        "starting whisper-server in tmux session {}",
+        runtime.server_session
+    );
+    start_tmux_session(&runtime.server_session, &command).await?;
+
+    if !wait_http_endpoint_ready(&runtime.server_url, 30).await {
+        return Err(format!(
+            "whisper-server failed to become ready at {}",
+            runtime.server_url
+        )
+        .into());
+    }
+    println!("whisper-server ready: {}", runtime.server_url);
+    Ok(())
+}
+
+async fn start_listener_runtime(
+    runtime: &crate::voice_command::VoiceCommandOperatorRuntimeConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if !runtime.listener_script_path.is_file() {
+        return Err(format!(
+            "listener script not found: {}",
+            runtime.listener_script_path.display()
+        )
+        .into());
+    }
+    require_command("python3")?;
+    require_command("tmux")?;
+    require_command("pactl")?;
+    if runtime.stt_backend == "moonshine" {
+        require_command("ffmpeg")?;
+    } else {
+        require_command("curl")?;
+        require_command("parec")?;
+    }
+
+    if tmux_has_session(&runtime.listener_session).await {
+        println!(
+            "listener tmux session already exists: {}",
+            runtime.listener_session
+        );
+        return Ok(());
+    }
+
+    if tmux_has_session(&runtime.agent_session).await {
+        println!(
+            "stopping agent session to avoid microphone contention: {}",
+            runtime.agent_session
+        );
+        stop_agent_runtime(runtime).await?;
+    }
+
+    if runtime.stt_backend != "moonshine" && !http_endpoint_ready(&runtime.server_url).await {
+        return Err(format!("whisper-server is not ready at {}", runtime.server_url).into());
+    }
+
+    std::fs::create_dir_all(&runtime.whisper_listen_tmp_dir)?;
+    let listener_cmd = shell_join_args(&build_listener_command_args(runtime));
+    let command = format!(
+        "export XDG_RUNTIME_DIR=${{XDG_RUNTIME_DIR:-/run/user/$(id -u)}}; exec {listener_cmd}"
+    );
+
+    println!(
+        "starting listener in tmux session {}",
+        runtime.listener_session
+    );
+    start_tmux_session(&runtime.listener_session, &command).await?;
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    if tmux_has_session(&runtime.listener_session).await {
+        println!("listener started");
+        Ok(())
+    } else {
+        Err("listener tmux session exited immediately".into())
+    }
+}
+
+async fn start_agent_runtime(
+    runtime: &crate::voice_command::VoiceCommandOperatorRuntimeConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if !runtime.agent_script_path.is_file() {
+        return Err(format!(
+            "agent script not found: {}",
+            runtime.agent_script_path.display()
+        )
+        .into());
+    }
+    require_command("python3")?;
+    require_command("tmux")?;
+    require_command("pactl")?;
+    require_command("xdotool")?;
+    require_command("wmctrl")?;
+    if runtime.stt_backend == "moonshine" {
+        require_command("ffmpeg")?;
+    } else {
+        require_command("curl")?;
+        require_command("parec")?;
+    }
+
+    if tmux_has_session(&runtime.agent_session).await {
+        println!(
+            "agent tmux session already exists: {}",
+            runtime.agent_session
+        );
+        return Ok(());
+    }
+
+    if tmux_has_session(&runtime.listener_session).await {
+        println!(
+            "stopping listener session to avoid microphone contention: {}",
+            runtime.listener_session
+        );
+        stop_listener_runtime(runtime).await?;
+    }
+
+    if runtime.stt_backend != "moonshine" && !http_endpoint_ready(&runtime.server_url).await {
+        return Err(format!("whisper-server is not ready at {}", runtime.server_url).into());
+    }
+
+    start_overlay_runtime(runtime).await?;
+    std::fs::create_dir_all(&runtime.whisper_listen_tmp_dir)?;
+    let agent_cmd = shell_join_args(&build_agent_command_args(runtime));
+    let command = format!(
+        "export XDG_RUNTIME_DIR=${{XDG_RUNTIME_DIR:-/run/user/$(id -u)}}; exec {agent_cmd}"
+    );
+
+    println!(
+        "starting voice command agent in tmux session {}",
+        runtime.agent_session
+    );
+    start_tmux_session(&runtime.agent_session, &command).await?;
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    if tmux_has_session(&runtime.agent_session).await {
+        println!("agent started");
+        Ok(())
+    } else {
+        Err("agent tmux session exited immediately".into())
+    }
+}
+
 async fn stop_legacy_overlay_sessions(
     runtime: &crate::voice_command::VoiceCommandOperatorRuntimeConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -1079,7 +1588,48 @@ async fn run_direct_voice_command_operator_action(
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let runtime = resolve_voice_command_operator_runtime_config();
     match action {
+        VoiceCommandOperatorAction::Start => {
+            start_server_runtime(&runtime).await?;
+            start_listener_runtime(&runtime).await?;
+            print_voice_command_status(&runtime).await;
+            Ok(true)
+        }
+        VoiceCommandOperatorAction::Restart => {
+            stop_listener_runtime(&runtime).await?;
+            start_listener_runtime(&runtime).await?;
+            print_voice_command_status(&runtime).await;
+            Ok(true)
+        }
+        VoiceCommandOperatorAction::RestartAll => {
+            stop_listener_runtime(&runtime).await?;
+            stop_server_runtime(&runtime).await?;
+            start_server_runtime(&runtime).await?;
+            start_listener_runtime(&runtime).await?;
+            print_voice_command_status(&runtime).await;
+            Ok(true)
+        }
         VoiceCommandOperatorAction::Status => {
+            print_voice_command_status(&runtime).await;
+            Ok(true)
+        }
+        VoiceCommandOperatorAction::StartAgent => {
+            start_server_runtime(&runtime).await?;
+            start_agent_runtime(&runtime).await?;
+            print_voice_command_status(&runtime).await;
+            Ok(true)
+        }
+        VoiceCommandOperatorAction::RestartAgent => {
+            stop_agent_runtime(&runtime).await?;
+            start_agent_runtime(&runtime).await?;
+            print_voice_command_status(&runtime).await;
+            Ok(true)
+        }
+        VoiceCommandOperatorAction::RestartAgentAll => {
+            stop_agent_runtime(&runtime).await?;
+            stop_overlay_runtime(&runtime).await?;
+            stop_server_runtime(&runtime).await?;
+            start_server_runtime(&runtime).await?;
+            start_agent_runtime(&runtime).await?;
             print_voice_command_status(&runtime).await;
             Ok(true)
         }
@@ -1095,21 +1645,11 @@ async fn run_direct_voice_command_operator_action(
             Ok(true)
         }
         VoiceCommandOperatorAction::Stop => {
-            tmux_kill_session_if_exists(
-                &runtime.listener_session,
-                &format!("listener stopped: {}", runtime.listener_session),
-                &format!("listener session not running: {}", runtime.listener_session),
-            )
-            .await?;
+            stop_listener_runtime(&runtime).await?;
             Ok(true)
         }
         VoiceCommandOperatorAction::StopAgent => {
-            tmux_kill_session_if_exists(
-                &runtime.agent_session,
-                &format!("agent stopped: {}", runtime.agent_session),
-                &format!("agent session not running: {}", runtime.agent_session),
-            )
-            .await?;
+            stop_agent_runtime(&runtime).await?;
             Ok(true)
         }
         VoiceCommandOperatorAction::StopOverlay => {
@@ -1117,42 +1657,10 @@ async fn run_direct_voice_command_operator_action(
             Ok(true)
         }
         VoiceCommandOperatorAction::StopAll => {
-            tmux_kill_session_if_exists(
-                &runtime.agent_session,
-                &format!("agent stopped: {}", runtime.agent_session),
-                &format!("agent session not running: {}", runtime.agent_session),
-            )
-            .await?;
-            tmux_kill_session_if_exists(
-                &runtime.listener_session,
-                &format!("listener stopped: {}", runtime.listener_session),
-                &format!("listener session not running: {}", runtime.listener_session),
-            )
-            .await?;
-            tmux_kill_session_if_exists(
-                &runtime.overlay_session,
-                &format!("overlay stopped: {}", runtime.overlay_session),
-                &format!("overlay session not running: {}", runtime.overlay_session),
-            )
-            .await?;
-            if runtime.lock_screen_port != "0" {
-                tmux_kill_session_if_exists(
-                    &runtime.lock_screen_session,
-                    &format!("lock screen stopped: {}", runtime.lock_screen_session),
-                    &format!(
-                        "lock screen session not running: {}",
-                        runtime.lock_screen_session
-                    ),
-                )
-                .await?;
-            }
-            stop_legacy_overlay_sessions(&runtime).await?;
-            tmux_kill_session_if_exists(
-                &runtime.server_session,
-                &format!("server stopped: {}", runtime.server_session),
-                &format!("server session not running: {}", runtime.server_session),
-            )
-            .await?;
+            stop_agent_runtime(&runtime).await?;
+            stop_listener_runtime(&runtime).await?;
+            stop_overlay_runtime(&runtime).await?;
+            stop_server_runtime(&runtime).await?;
             Ok(true)
         }
         VoiceCommandOperatorAction::WatchMic => {
@@ -1227,30 +1735,12 @@ async fn run_direct_voice_command_operator_action(
 pub async fn run_voice_command_operator(
     action: &VoiceCommandOperatorAction,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if run_direct_voice_command_operator_action(action).await? {
-        return Ok(());
-    }
-
-    let spec = build_voice_command_operator_launch_spec(action);
-    if !spec.script_path.is_file() {
+    if !run_direct_voice_command_operator_action(action).await? {
         return Err(format!(
-            "voice command operator entrypoint not found: {}",
-            spec.script_path.display()
+            "voice command operator action not implemented: {:?}",
+            action
         )
         .into());
-    }
-
-    let status = Command::new(&spec.program)
-        .args(&spec.args)
-        .envs(spec.env.iter().cloned())
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .await?;
-
-    if !status.success() {
-        return Err(format!("voice command operator exited with status {}", status).into());
     }
 
     Ok(())
@@ -1502,7 +1992,14 @@ mod tests {
     use crate::voice_command::{
         VoiceCommandOperatorAction, resolve_voice_command_operator_runtime_config,
     };
+    use std::sync::{Mutex, MutexGuard};
     use tempfile::tempdir;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn env_lock() -> MutexGuard<'static, ()> {
+        ENV_LOCK.lock().expect("process env lock poisoned")
+    }
 
     fn env_keys(keys: &[&str]) -> HashSet<String> {
         keys.iter().map(|k| (*k).to_string()).collect()
@@ -1789,5 +2286,199 @@ mod tests {
         assert!(command.contains("export ASEC_DISPLAY=':1'"));
         assert!(command.contains("export ASEC_BIOMETRIC_PASSWORD_FILE='/tmp/password.enc'"));
         assert!(command.contains("exec npm run start:bridge -- --tcp-port 47833"));
+    }
+
+    #[test]
+    fn build_server_command_args_use_runtime_values() {
+        let runtime = resolve_voice_command_operator_runtime_config();
+        let runtime = crate::voice_command::VoiceCommandOperatorRuntimeConfig {
+            server_bin: PathBuf::from("/tmp/whisper-server"),
+            server_host: "0.0.0.0".to_string(),
+            server_port: "19090".to_string(),
+            server_model: PathBuf::from("/models/ggml-medium.bin"),
+            whisper_language: "en".to_string(),
+            ..runtime
+        };
+
+        let args = build_server_command_args(&runtime);
+
+        assert_eq!(
+            args,
+            vec![
+                "/tmp/whisper-server",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                "19090",
+                "-m",
+                "/models/ggml-medium.bin",
+                "-l",
+                "en",
+                "-nt",
+                "-ng",
+            ]
+        );
+    }
+
+    #[test]
+    fn build_listener_command_args_include_whisper_env_overrides() {
+        let _guard = env_lock();
+        unsafe {
+            std::env::set_var("WHISPER_LISTEN_STT_PROMPT", "システム 状況報告");
+            std::env::set_var("WHISPER_LISTEN_DEBUG", "1");
+            std::env::set_var("WHISPER_LISTEN_MAX_RUN_SEC", "30");
+            std::env::set_var("WHISPER_LISTEN_MAX_SEGMENTS", "2");
+        }
+
+        let runtime = resolve_voice_command_operator_runtime_config();
+        let runtime = crate::voice_command::VoiceCommandOperatorRuntimeConfig {
+            stt_backend: "whisper".to_string(),
+            listener_script_path: PathBuf::from("/tmp/listener.py"),
+            whisper_listen_tmp_dir: PathBuf::from("/tmp/voices"),
+            server_url: "http://127.0.0.1:18080".to_string(),
+            whisper_language: "ja".to_string(),
+            whisper_mic_source: Some("alsa_input.usb".to_string()),
+            ..runtime
+        };
+
+        let args = build_listener_command_args(&runtime);
+
+        assert_eq!(
+            args,
+            vec![
+                "python3",
+                "/tmp/listener.py",
+                "--tmp-dir",
+                "/tmp/voices",
+                "--server",
+                "http://127.0.0.1:18080",
+                "--language",
+                "ja",
+                "--stt-prompt",
+                "システム 状況報告",
+                "--source",
+                "alsa_input.usb",
+                "--debug",
+                "--max-run-sec",
+                "30",
+                "--max-segments",
+                "2",
+            ]
+        );
+
+        unsafe {
+            std::env::remove_var("WHISPER_LISTEN_STT_PROMPT");
+            std::env::remove_var("WHISPER_LISTEN_DEBUG");
+            std::env::remove_var("WHISPER_LISTEN_MAX_RUN_SEC");
+            std::env::remove_var("WHISPER_LISTEN_MAX_SEGMENTS");
+        }
+    }
+
+    #[test]
+    fn build_agent_command_args_include_overlay_speaker_and_biometric_options() {
+        let _guard = env_lock();
+        unsafe {
+            std::env::set_var("WHISPER_AGENT_DEBUG", "1");
+            std::env::set_var("WHISPER_AGENT_MAX_RUN_SEC", "40");
+            std::env::set_var("WHISPER_AGENT_STT_PROMPT", "システム おはよう");
+            std::env::set_var("WHISPER_AGENT_CALIBRATION_MS", "600");
+            std::env::set_var("WHISPER_AGENT_START_RMS", "0.02");
+            std::env::set_var("WHISPER_AGENT_STOP_RMS", "0.01");
+            std::env::set_var("WHISPER_AGENT_NO_VOICE", "1");
+            std::env::set_var("WHISPER_AGENT_WAIT_ACK_AFTER_ACTION", "1");
+            std::env::set_var("WHISPER_AGENT_AUDIO_SINK", "sink-main");
+            std::env::set_var("WHISPER_AGENT_NOTIFY_PROGRESS", "1");
+            std::env::set_var("WHISPER_AGENT_SPEAKER_ID", "1");
+            std::env::set_var("WHISPER_AGENT_SPEAKER_MASTER", "/tmp/master.npy");
+            std::env::set_var("WHISPER_AGENT_SPEAKER_THRESHOLD", "0.75");
+            std::env::set_var("WHISPER_AGENT_SPEAKER_TOPK", "7");
+            std::env::set_var("WHISPER_AGENT_SPEAKER_DEVICE", "cuda:0");
+            std::env::set_var("WHISPER_AGENT_BIOMETRIC_LOCK", "1");
+            std::env::set_var("WHISPER_AGENT_BIOMETRIC_START_LOCKED", "1");
+            std::env::set_var("WHISPER_AGENT_BIOMETRIC_COMMAND_IDLE_LOCK_SEC", "1800");
+            std::env::set_var("WHISPER_AGENT_BIOMETRIC_FACE_ABSENT_LOCK_SEC", "120");
+            std::env::set_var("WHISPER_AGENT_BIOMETRIC_UNLOCK_FACE_FRESH_MS", "1000");
+            std::env::set_var("WHISPER_AGENT_BIOMETRIC_POLL_SEC", "5");
+            std::env::set_var(
+                "WHISPER_AGENT_GOD_MODE_STATUS_URL",
+                "http://127.0.0.1:8765/status",
+            );
+            std::env::set_var(
+                "WHISPER_AGENT_BIOMETRIC_PASSWORD_PUBLIC_KEY",
+                "/tmp/pub.pem",
+            );
+            std::env::set_var(
+                "WHISPER_AGENT_BIOMETRIC_LOCK_SIGNAL_FILE",
+                "/tmp/lock.signal",
+            );
+        }
+
+        let runtime = resolve_voice_command_operator_runtime_config();
+        let runtime = crate::voice_command::VoiceCommandOperatorRuntimeConfig {
+            stt_backend: "whisper".to_string(),
+            agent_script_path: PathBuf::from("/tmp/agent.py"),
+            whisper_listen_tmp_dir: PathBuf::from("/tmp/voices"),
+            server_url: "http://127.0.0.1:18080".to_string(),
+            whisper_language: "ja".to_string(),
+            whisper_mic_source: Some("alsa_input.usb".to_string()),
+            overlay_host: "127.0.0.1".to_string(),
+            overlay_port: "47832".to_string(),
+            lock_screen_port: "47833".to_string(),
+            biometric_password_file: Some(PathBuf::from("/tmp/password.enc")),
+            biometric_password_private_key: Some(PathBuf::from("/tmp/key.pem")),
+            biometric_unlock_signal_file: Some(PathBuf::from("/tmp/unlock.signal")),
+            ..runtime
+        };
+
+        let args = build_agent_command_args(&runtime);
+
+        assert!(args.starts_with(&[
+            "python3".to_string(),
+            "/tmp/agent.py".to_string(),
+            "--tmp-dir".to_string(),
+            "/tmp/voices".to_string(),
+            "--stt-backend".to_string(),
+            "whisper".to_string(),
+        ]));
+        assert!(args.contains(&"--overlay-ipc-host".to_string()));
+        assert!(args.contains(&"127.0.0.1".to_string()));
+        assert!(args.contains(&"--speaker-id".to_string()));
+        assert!(args.contains(&"/tmp/master.npy".to_string()));
+        assert!(args.contains(&"cuda:0".to_string()));
+        assert!(args.contains(&"--biometric-lock".to_string()));
+        assert!(args.contains(&"--biometric-start-locked".to_string()));
+        assert!(args.contains(&"/tmp/password.enc".to_string()));
+        assert!(args.contains(&"/tmp/key.pem".to_string()));
+        assert!(args.contains(&"/tmp/pub.pem".to_string()));
+        assert!(args.contains(&"/tmp/lock.signal".to_string()));
+        assert!(args.contains(&"/tmp/unlock.signal".to_string()));
+        assert!(args.contains(&"http://127.0.0.1:8765/status".to_string()));
+
+        unsafe {
+            std::env::remove_var("WHISPER_AGENT_DEBUG");
+            std::env::remove_var("WHISPER_AGENT_MAX_RUN_SEC");
+            std::env::remove_var("WHISPER_AGENT_STT_PROMPT");
+            std::env::remove_var("WHISPER_AGENT_CALIBRATION_MS");
+            std::env::remove_var("WHISPER_AGENT_START_RMS");
+            std::env::remove_var("WHISPER_AGENT_STOP_RMS");
+            std::env::remove_var("WHISPER_AGENT_NO_VOICE");
+            std::env::remove_var("WHISPER_AGENT_WAIT_ACK_AFTER_ACTION");
+            std::env::remove_var("WHISPER_AGENT_AUDIO_SINK");
+            std::env::remove_var("WHISPER_AGENT_NOTIFY_PROGRESS");
+            std::env::remove_var("WHISPER_AGENT_SPEAKER_ID");
+            std::env::remove_var("WHISPER_AGENT_SPEAKER_MASTER");
+            std::env::remove_var("WHISPER_AGENT_SPEAKER_THRESHOLD");
+            std::env::remove_var("WHISPER_AGENT_SPEAKER_TOPK");
+            std::env::remove_var("WHISPER_AGENT_SPEAKER_DEVICE");
+            std::env::remove_var("WHISPER_AGENT_BIOMETRIC_LOCK");
+            std::env::remove_var("WHISPER_AGENT_BIOMETRIC_START_LOCKED");
+            std::env::remove_var("WHISPER_AGENT_BIOMETRIC_COMMAND_IDLE_LOCK_SEC");
+            std::env::remove_var("WHISPER_AGENT_BIOMETRIC_FACE_ABSENT_LOCK_SEC");
+            std::env::remove_var("WHISPER_AGENT_BIOMETRIC_UNLOCK_FACE_FRESH_MS");
+            std::env::remove_var("WHISPER_AGENT_BIOMETRIC_POLL_SEC");
+            std::env::remove_var("WHISPER_AGENT_GOD_MODE_STATUS_URL");
+            std::env::remove_var("WHISPER_AGENT_BIOMETRIC_PASSWORD_PUBLIC_KEY");
+            std::env::remove_var("WHISPER_AGENT_BIOMETRIC_LOCK_SIGNAL_FILE");
+        }
     }
 }

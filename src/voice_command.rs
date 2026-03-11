@@ -112,47 +112,6 @@ pub enum VoiceCommandOperatorAction {
     StopWatchMic,
 }
 
-impl VoiceCommandOperatorAction {
-    pub fn as_tmux_command(&self) -> &'static str {
-        match self {
-            Self::Start => "start",
-            Self::Restart => "restart",
-            Self::RestartAll => "restart-all",
-            Self::Status => "status",
-            Self::StartAgent => "start-agent",
-            Self::RestartAgent => "restart-agent",
-            Self::RestartAgentAll => "restart-agent-all",
-            Self::StopAgent => "stop-agent",
-            Self::StopAll => "stop-all",
-            Self::Stop => "stop",
-            Self::StartOverlay => "start-overlay",
-            Self::RestartOverlay => "restart-overlay",
-            Self::StopOverlay => "stop-overlay",
-            Self::LogsServer => "logs-server",
-            Self::LogsListener => "logs-listener",
-            Self::LogsAgent => "logs-agent",
-            Self::LogsAgentTail => "logs-agent-tail",
-            Self::LogsOverlay => "logs-overlay",
-            Self::LogsLockScreen => "logs-lock-screen",
-            Self::AttachServer => "attach-server",
-            Self::AttachListener => "attach-listener",
-            Self::AttachAgent => "attach-agent",
-            Self::AttachOverlay => "attach-overlay",
-            Self::AttachLockScreen => "attach-lock-screen",
-            Self::WatchMic => "watch-mic",
-            Self::StopWatchMic => "stop-watch-mic",
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VoiceCommandOperatorLaunchSpec {
-    pub program: OsString,
-    pub script_path: PathBuf,
-    pub args: Vec<OsString>,
-    pub env: Vec<(OsString, OsString)>,
-}
-
 pub fn resolve_workspaces_root() -> PathBuf {
     if let Some(root) = std::env::var_os("YUICLAW_WORKSPACES_ROOT") {
         return PathBuf::from(root);
@@ -171,13 +130,6 @@ pub fn resolve_voice_command_script_path(workspaces_root: &Path) -> PathBuf {
         return PathBuf::from(script_path);
     }
     workspaces_root.join("tmp/whispercpp-listen/voice_command_loop.py")
-}
-
-pub fn resolve_voice_command_operator_script_path(workspaces_root: &Path) -> PathBuf {
-    if let Some(script_path) = std::env::var_os("YUICLAW_VOICE_COMMAND_OPERATOR_SCRIPT") {
-        return PathBuf::from(script_path);
-    }
-    workspaces_root.join("tmp/whispercpp-listen/tmux_listen_only.sh")
 }
 
 pub fn resolve_voice_command_operator_runtime_config() -> VoiceCommandOperatorRuntimeConfig {
@@ -328,37 +280,11 @@ pub fn build_voice_command_launch_spec(
     }
 }
 
-pub fn build_voice_command_operator_launch_spec(
-    action: &VoiceCommandOperatorAction,
-) -> VoiceCommandOperatorLaunchSpec {
-    let workspaces_root = resolve_workspaces_root();
-    let script_path = resolve_voice_command_operator_script_path(&workspaces_root);
-    let program = std::env::var_os("YUICLAW_VOICE_COMMAND_OPERATOR_SHELL")
-        .unwrap_or_else(|| OsString::from("bash"));
-    let args = vec![
-        script_path.clone().into_os_string(),
-        OsString::from(action.as_tmux_command()),
-    ];
-    let env = vec![(
-        OsString::from("YUICLAW_VOICE_COMMAND_OPERATOR_BACKEND"),
-        OsString::from("1"),
-    )];
-
-    VoiceCommandOperatorLaunchSpec {
-        program,
-        script_path,
-        args,
-        env,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        VoiceCommandOperatorAction, build_voice_command_launch_spec,
-        build_voice_command_operator_launch_spec, resolve_voice_command_operator_runtime_config,
-        resolve_voice_command_operator_script_path, resolve_voice_command_script_path,
-        resolve_workspaces_root,
+        build_voice_command_launch_spec, resolve_voice_command_operator_runtime_config,
+        resolve_voice_command_script_path, resolve_workspaces_root,
     };
     use std::ffi::OsString;
     use std::path::Path;
@@ -430,58 +356,6 @@ mod tests {
         unsafe {
             std::env::remove_var("YUICLAW_WORKSPACES_ROOT");
             std::env::remove_var("YUICLAW_VOICE_COMMAND_PYTHON");
-        }
-    }
-
-    #[test]
-    fn resolve_voice_command_operator_script_path_prefers_env_override() {
-        let _guard = env_lock();
-        unsafe {
-            std::env::set_var(
-                "YUICLAW_VOICE_COMMAND_OPERATOR_SCRIPT",
-                "/tmp/custom-tmux-listen-only.sh",
-            )
-        };
-        let script_path = resolve_voice_command_operator_script_path(Path::new("/unused"));
-        assert_eq!(script_path, Path::new("/tmp/custom-tmux-listen-only.sh"));
-        unsafe { std::env::remove_var("YUICLAW_VOICE_COMMAND_OPERATOR_SCRIPT") };
-    }
-
-    #[test]
-    fn build_voice_command_operator_launch_spec_uses_bash_and_tmux_command() {
-        let _guard = env_lock();
-        unsafe {
-            std::env::set_var("YUICLAW_WORKSPACES_ROOT", "/workspaces");
-            std::env::set_var("YUICLAW_VOICE_COMMAND_OPERATOR_SHELL", "bash-test");
-            std::env::remove_var("YUICLAW_VOICE_COMMAND_OPERATOR_SCRIPT");
-        }
-
-        let spec =
-            build_voice_command_operator_launch_spec(&VoiceCommandOperatorAction::RestartAgentAll);
-
-        assert_eq!(spec.program, OsString::from("bash-test"));
-        assert_eq!(
-            spec.script_path,
-            Path::new("/workspaces/tmp/whispercpp-listen/tmux_listen_only.sh")
-        );
-        assert_eq!(
-            spec.args,
-            vec![
-                OsString::from("/workspaces/tmp/whispercpp-listen/tmux_listen_only.sh"),
-                OsString::from("restart-agent-all"),
-            ]
-        );
-        assert_eq!(
-            spec.env,
-            vec![(
-                OsString::from("YUICLAW_VOICE_COMMAND_OPERATOR_BACKEND"),
-                OsString::from("1")
-            )]
-        );
-
-        unsafe {
-            std::env::remove_var("YUICLAW_WORKSPACES_ROOT");
-            std::env::remove_var("YUICLAW_VOICE_COMMAND_OPERATOR_SHELL");
         }
     }
 
