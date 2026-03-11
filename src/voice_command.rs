@@ -130,7 +130,7 @@ pub fn resolve_voice_command_entrypoint_path(workspaces_root: &Path) -> PathBuf 
     if let Some(entrypoint_path) = std::env::var_os("YUICLAW_VOICE_COMMAND_ENTRYPOINT") {
         return PathBuf::from(entrypoint_path);
     }
-    workspaces_root.join("repos/arouter/src/arouter/voice_command_entrypoint.py")
+    workspaces_root.join("repos/arouter/scripts/voice_command_runtime.py")
 }
 
 pub fn resolve_voice_command_operator_runtime_config() -> VoiceCommandOperatorRuntimeConfig {
@@ -202,14 +202,14 @@ pub fn resolve_voice_command_operator_runtime_config() -> VoiceCommandOperatorRu
         .map(PathBuf::from)
         .unwrap_or_else(|| {
             if stt_backend == "moonshine" {
-                workspaces_root.join("tmp/whispercpp-listen/listen_only_moonshine_server.py")
+                workspaces_root.join("repos/ahear/python/src/ahear/moonshine_listener.py")
             } else {
-                workspaces_root.join("tmp/whispercpp-listen/listen_only_whisper_server.py")
+                workspaces_root.join("repos/ahear/python/src/ahear/whisper_listener.py")
             }
         });
     let agent_script_path = std::env::var_os("WHISPER_AGENT_SCRIPT")
         .map(PathBuf::from)
-        .unwrap_or_else(|| workspaces_root.join("tmp/whispercpp-listen/voice_command_loop.py"));
+        .unwrap_or_else(|| workspaces_root.join("repos/arouter/scripts/voice_command_runtime.py"));
     VoiceCommandOperatorRuntimeConfig {
         stt_backend,
         moonshine_model_size,
@@ -266,17 +266,7 @@ pub fn build_voice_command_launch_spec(
     let entrypoint_path = resolve_voice_command_entrypoint_path(&workspaces_root);
     let program = std::env::var_os("YUICLAW_VOICE_COMMAND_PYTHON")
         .unwrap_or_else(|| OsString::from("python3"));
-    let pythonpath = workspaces_root.join("repos/arouter/src");
-    let pythonpath_value = match std::env::var_os("PYTHONPATH") {
-        Some(existing) if !existing.is_empty() => std::env::join_paths([pythonpath, existing.into()])
-            .expect("voice command pythonpath should be joinable"),
-        _ => pythonpath.into_os_string(),
-    };
-
-    let mut args = vec![
-        OsString::from("-m"),
-        OsString::from("arouter.voice_command_entrypoint"),
-    ];
+    let mut args = vec![entrypoint_path.clone().into_os_string()];
     if let Some(text) = run_command {
         args.push(OsString::from("--run-command"));
         args.push(OsString::from(text));
@@ -288,10 +278,6 @@ pub fn build_voice_command_launch_spec(
         entrypoint_path,
         args,
         env: vec![
-            (
-                OsString::from("PYTHONPATH"),
-                pythonpath_value,
-            ),
             (
                 OsString::from("YUICLAW_WORKSPACES_ROOT"),
                 workspaces_root.into_os_string(),
@@ -362,13 +348,12 @@ mod tests {
         assert_eq!(spec.program, OsString::from("python-test"));
         assert_eq!(
             spec.entrypoint_path,
-            Path::new("/workspaces/repos/arouter/src/arouter/voice_command_entrypoint.py")
+            Path::new("/workspaces/repos/arouter/scripts/voice_command_runtime.py")
         );
         assert_eq!(
             spec.args,
             vec![
-                OsString::from("-m"),
-                OsString::from("arouter.voice_command_entrypoint"),
+                OsString::from("/workspaces/repos/arouter/scripts/voice_command_runtime.py"),
                 OsString::from("--run-command"),
                 OsString::from("システム 街頭カメラを表示"),
                 OsString::from("--debug"),
@@ -379,10 +364,6 @@ mod tests {
         assert_eq!(
             spec.env,
             vec![
-                (
-                    OsString::from("PYTHONPATH"),
-                    OsString::from("/workspaces/repos/arouter/src"),
-                ),
                 (
                     OsString::from("YUICLAW_WORKSPACES_ROOT"),
                     OsString::from("/workspaces"),
@@ -397,22 +378,44 @@ mod tests {
     }
 
     #[test]
-    fn build_voice_command_launch_spec_preserves_existing_pythonpath() {
+    fn build_voice_command_launch_spec_sets_workspaces_root_env() {
         let _guard = env_lock();
         unsafe {
             std::env::set_var("YUICLAW_WORKSPACES_ROOT", "/workspaces");
-            std::env::set_var("PYTHONPATH", "/already/there");
             std::env::remove_var("YUICLAW_VOICE_COMMAND_ENTRYPOINT");
         }
 
         let spec = build_voice_command_launch_spec(None, &[]);
 
         assert_eq!(
-            spec.env[0],
-            (
-                OsString::from("PYTHONPATH"),
-                OsString::from("/workspaces/repos/arouter/src:/already/there"),
-            )
+            spec.env,
+            vec![(
+                OsString::from("YUICLAW_WORKSPACES_ROOT"),
+                OsString::from("/workspaces"),
+            )]
+        );
+
+        unsafe {
+            std::env::remove_var("YUICLAW_WORKSPACES_ROOT");
+        }
+    }
+
+    #[test]
+    fn build_voice_command_launch_spec_ignores_existing_pythonpath() {
+        let _guard = env_lock();
+        unsafe {
+            std::env::set_var("YUICLAW_WORKSPACES_ROOT", "/workspaces");
+            std::env::set_var("PYTHONPATH", "/already/there");
+        }
+
+        let spec = build_voice_command_launch_spec(None, &[]);
+
+        assert_eq!(
+            spec.env,
+            vec![(
+                OsString::from("YUICLAW_WORKSPACES_ROOT"),
+                OsString::from("/workspaces"),
+            )]
         );
 
         unsafe {
@@ -467,11 +470,11 @@ mod tests {
         assert_eq!(config.moonshine_model_size, "base");
         assert_eq!(
             config.listener_script_path,
-            Path::new("/workspaces/tmp/whispercpp-listen/listen_only_moonshine_server.py")
+            Path::new("/workspaces/repos/ahear/python/src/ahear/moonshine_listener.py")
         );
         assert_eq!(
             config.agent_script_path,
-            Path::new("/workspaces/tmp/whispercpp-listen/voice_command_loop.py")
+            Path::new("/workspaces/repos/arouter/scripts/voice_command_runtime.py")
         );
         assert_eq!(config.server_url, "http://127.0.0.1:18080");
         assert_eq!(config.whisper_language, "ja");

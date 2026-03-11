@@ -98,7 +98,7 @@ pub enum Commands {
         /// 1回だけコマンド文字列を実行して終了する
         #[arg(long)]
         run_command: Option<String>,
-        /// voice_command_loop.py に追加でそのまま渡す引数
+        /// voice command runtime script に追加でそのまま渡す引数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         extra_args: Vec<String>,
     },
