@@ -140,7 +140,7 @@ pub fn resolve_voice_command_operator_runtime_config() -> VoiceCommandOperatorRu
         std::env::var("MOONSHINE_MODEL_SIZE").unwrap_or_else(|_| "base".to_string());
     let whisper_root = std::env::var_os("WHISPER_ROOT")
         .map(PathBuf::from)
-        .unwrap_or_else(|| workspaces_root.join("repos/whisper.cpp"));
+        .unwrap_or_else(|| workspaces_root.join("repos/_voice/whisper.cpp"));
     let server_bin = std::env::var_os("WHISPER_SERVER_BIN")
         .map(PathBuf::from)
         .unwrap_or_else(|| whisper_root.join("build/bin/whisper-server"));
