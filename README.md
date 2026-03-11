@@ -310,8 +310,8 @@ yuiclaw voice-command operator stop-watch-mic
 ```
 
 All public operator actions now run from `yuiclaw` itself. The legacy
-`tmp/whispercpp-listen/tmux_listen_only.sh` entrypoint remains only as a compatibility wrapper
-for older callers.
+`tmux_listen_only.sh` entrypoint is kept only as a backend shim
+invoked by `yuiclaw voice-command operator` internally.
 
 ## Architecture
 
