@@ -1017,7 +1017,7 @@ fn build_agent_command_args(
             env_var_nonempty("WHISPER_AGENT_SPEAKER_MASTER").unwrap_or_else(|| {
                 runtime
                     .workspaces_root
-                    .join("tmp/whispercpp-listen/tests/fixtures/master_voiceprint.npy")
+                    .join("repos/ahear/python/src/ahear/models/master_voiceprint.npy")
                     .display()
                     .to_string()
             }),
@@ -2483,6 +2483,33 @@ mod tests {
             std::env::remove_var("WHISPER_AGENT_GOD_MODE_STATUS_URL");
             std::env::remove_var("WHISPER_AGENT_BIOMETRIC_PASSWORD_PUBLIC_KEY");
             std::env::remove_var("WHISPER_AGENT_BIOMETRIC_LOCK_SIGNAL_FILE");
+        }
+    }
+
+    #[test]
+    fn build_agent_command_args_defaults_speaker_master_to_ahear_model() {
+        let _guard = env_lock();
+        unsafe {
+            std::env::set_var("YUICLAW_WORKSPACES_ROOT", "/workspaces");
+            std::env::remove_var("WHISPER_AGENT_SPEAKER_MASTER");
+            std::env::set_var("WHISPER_AGENT_SPEAKER_ID", "1");
+        }
+
+        let runtime = resolve_voice_command_operator_runtime_config();
+        let args = build_agent_command_args(&runtime);
+
+        assert!(args.contains(&"--speaker-master".to_string()));
+        assert!(args.contains(
+            &"/workspaces/repos/ahear/python/src/ahear/models/master_voiceprint.npy".to_string()
+        ));
+        assert!(!args.contains(
+            &"/workspaces/tmp/whispercpp-listen/tests/fixtures/master_voiceprint.npy".to_string()
+        ));
+
+        unsafe {
+            std::env::remove_var("YUICLAW_WORKSPACES_ROOT");
+            std::env::remove_var("WHISPER_AGENT_SPEAKER_MASTER");
+            std::env::remove_var("WHISPER_AGENT_SPEAKER_ID");
         }
     }
 }
