@@ -270,21 +270,25 @@ pub async fn run_voice_command(
     extra_args: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
     let spec = build_voice_command_launch_spec(run_command, extra_args);
-    if !spec.script_path.is_file() {
+    if !spec.entrypoint_path.is_file() {
         return Err(format!(
             "voice command entrypoint not found: {}",
-            spec.script_path.display()
+            spec.entrypoint_path.display()
         )
         .into());
     }
 
-    let status = Command::new(&spec.program)
+    let mut command = Command::new(&spec.program);
+    command
         .args(&spec.args)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .await?;
+        .stderr(Stdio::inherit());
+    for (key, value) in &spec.env {
+        command.env(key, value);
+    }
+
+    let status = command.status().await?;
 
     if !status.success() {
         return Err(format!("voice command exited with status {}", status).into());

@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VoiceCommandLaunchSpec {
     pub program: OsString,
-    pub script_path: PathBuf,
+    pub entrypoint_path: PathBuf,
     pub args: Vec<OsString>,
+    pub env: Vec<(OsString, OsString)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -125,11 +126,11 @@ pub fn resolve_workspaces_root() -> PathBuf {
         .unwrap_or(manifest_dir)
 }
 
-pub fn resolve_voice_command_script_path(workspaces_root: &Path) -> PathBuf {
-    if let Some(script_path) = std::env::var_os("YUICLAW_VOICE_COMMAND_SCRIPT") {
-        return PathBuf::from(script_path);
+pub fn resolve_voice_command_entrypoint_path(workspaces_root: &Path) -> PathBuf {
+    if let Some(entrypoint_path) = std::env::var_os("YUICLAW_VOICE_COMMAND_ENTRYPOINT") {
+        return PathBuf::from(entrypoint_path);
     }
-    workspaces_root.join("tmp/whispercpp-listen/voice_command_loop.py")
+    workspaces_root.join("repos/arouter/src/arouter/voice_command_entrypoint.py")
 }
 
 pub fn resolve_voice_command_operator_runtime_config() -> VoiceCommandOperatorRuntimeConfig {
@@ -262,11 +263,20 @@ pub fn build_voice_command_launch_spec(
     extra_args: &[String],
 ) -> VoiceCommandLaunchSpec {
     let workspaces_root = resolve_workspaces_root();
-    let script_path = resolve_voice_command_script_path(&workspaces_root);
+    let entrypoint_path = resolve_voice_command_entrypoint_path(&workspaces_root);
     let program = std::env::var_os("YUICLAW_VOICE_COMMAND_PYTHON")
         .unwrap_or_else(|| OsString::from("python3"));
+    let pythonpath = workspaces_root.join("repos/arouter/src");
+    let pythonpath_value = match std::env::var_os("PYTHONPATH") {
+        Some(existing) if !existing.is_empty() => std::env::join_paths([pythonpath, existing.into()])
+            .expect("voice command pythonpath should be joinable"),
+        _ => pythonpath.into_os_string(),
+    };
 
-    let mut args = vec![script_path.clone().into_os_string()];
+    let mut args = vec![
+        OsString::from("-m"),
+        OsString::from("arouter.voice_command_entrypoint"),
+    ];
     if let Some(text) = run_command {
         args.push(OsString::from("--run-command"));
         args.push(OsString::from(text));
@@ -275,8 +285,18 @@ pub fn build_voice_command_launch_spec(
 
     VoiceCommandLaunchSpec {
         program,
-        script_path,
+        entrypoint_path,
         args,
+        env: vec![
+            (
+                OsString::from("PYTHONPATH"),
+                pythonpath_value,
+            ),
+            (
+                OsString::from("YUICLAW_WORKSPACES_ROOT"),
+                workspaces_root.into_os_string(),
+            ),
+        ],
     }
 }
 
@@ -284,7 +304,7 @@ pub fn build_voice_command_launch_spec(
 mod tests {
     use super::{
         build_voice_command_launch_spec, resolve_voice_command_operator_runtime_config,
-        resolve_voice_command_script_path, resolve_workspaces_root,
+        resolve_voice_command_entrypoint_path, resolve_workspaces_root,
     };
     use std::ffi::OsString;
     use std::path::Path;
@@ -305,17 +325,20 @@ mod tests {
     }
 
     #[test]
-    fn resolve_voice_command_script_path_prefers_env_override() {
+    fn resolve_voice_command_entrypoint_path_prefers_env_override() {
         let _guard = env_lock();
         unsafe {
             std::env::set_var(
-                "YUICLAW_VOICE_COMMAND_SCRIPT",
-                "/tmp/custom-voice-command.py",
+                "YUICLAW_VOICE_COMMAND_ENTRYPOINT",
+                "/tmp/custom-voice-command-entrypoint.py",
             )
         };
-        let script_path = resolve_voice_command_script_path(Path::new("/unused"));
-        assert_eq!(script_path, Path::new("/tmp/custom-voice-command.py"));
-        unsafe { std::env::remove_var("YUICLAW_VOICE_COMMAND_SCRIPT") };
+        let entrypoint_path = resolve_voice_command_entrypoint_path(Path::new("/unused"));
+        assert_eq!(
+            entrypoint_path,
+            Path::new("/tmp/custom-voice-command-entrypoint.py")
+        );
+        unsafe { std::env::remove_var("YUICLAW_VOICE_COMMAND_ENTRYPOINT") };
     }
 
     #[test]
@@ -324,7 +347,7 @@ mod tests {
         unsafe {
             std::env::set_var("YUICLAW_WORKSPACES_ROOT", "/workspaces");
             std::env::set_var("YUICLAW_VOICE_COMMAND_PYTHON", "python-test");
-            std::env::remove_var("YUICLAW_VOICE_COMMAND_SCRIPT");
+            std::env::remove_var("YUICLAW_VOICE_COMMAND_ENTRYPOINT");
         }
 
         let spec = build_voice_command_launch_spec(
@@ -338,13 +361,14 @@ mod tests {
 
         assert_eq!(spec.program, OsString::from("python-test"));
         assert_eq!(
-            spec.script_path,
-            Path::new("/workspaces/tmp/whispercpp-listen/voice_command_loop.py")
+            spec.entrypoint_path,
+            Path::new("/workspaces/repos/arouter/src/arouter/voice_command_entrypoint.py")
         );
         assert_eq!(
             spec.args,
             vec![
-                OsString::from("/workspaces/tmp/whispercpp-listen/voice_command_loop.py"),
+                OsString::from("-m"),
+                OsString::from("arouter.voice_command_entrypoint"),
                 OsString::from("--run-command"),
                 OsString::from("システム 街頭カメラを表示"),
                 OsString::from("--debug"),
@@ -352,10 +376,48 @@ mod tests {
                 OsString::from("mic"),
             ]
         );
+        assert_eq!(
+            spec.env,
+            vec![
+                (
+                    OsString::from("PYTHONPATH"),
+                    OsString::from("/workspaces/repos/arouter/src"),
+                ),
+                (
+                    OsString::from("YUICLAW_WORKSPACES_ROOT"),
+                    OsString::from("/workspaces"),
+                ),
+            ]
+        );
 
         unsafe {
             std::env::remove_var("YUICLAW_WORKSPACES_ROOT");
             std::env::remove_var("YUICLAW_VOICE_COMMAND_PYTHON");
+        }
+    }
+
+    #[test]
+    fn build_voice_command_launch_spec_preserves_existing_pythonpath() {
+        let _guard = env_lock();
+        unsafe {
+            std::env::set_var("YUICLAW_WORKSPACES_ROOT", "/workspaces");
+            std::env::set_var("PYTHONPATH", "/already/there");
+            std::env::remove_var("YUICLAW_VOICE_COMMAND_ENTRYPOINT");
+        }
+
+        let spec = build_voice_command_launch_spec(None, &[]);
+
+        assert_eq!(
+            spec.env[0],
+            (
+                OsString::from("PYTHONPATH"),
+                OsString::from("/workspaces/repos/arouter/src:/already/there"),
+            )
+        );
+
+        unsafe {
+            std::env::remove_var("YUICLAW_WORKSPACES_ROOT");
+            std::env::remove_var("PYTHONPATH");
         }
     }
 

@@ -89,7 +89,7 @@ Top-level commands:
 - `tick`: Run due `abeat` jobs (intended for cron/systemd).
 - `pub <message> [--channel CHANNEL]`: Publish a message to the running bridge.
 - `reset`: Reset the active session (clears conversation history and agent state).
-- `voice-command [--run-command TEXT] [-- <extra args...>]`: Launch the voice command operator entrypoint.
+- `voice-command [--run-command TEXT] [-- <extra args...>]`: Launch the `arouter`-owned voice command runtime entrypoint.
 - `voice-command operator <action>`: Manage the compatibility tmux/operator runtime from `yuiclaw`.
 
 ## Quick Start
