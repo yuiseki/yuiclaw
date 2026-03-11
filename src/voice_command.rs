@@ -221,7 +221,7 @@ pub fn resolve_voice_command_operator_runtime_config() -> VoiceCommandOperatorRu
         whisper_language,
         whisper_mic_source,
         whisper_listen_tmp_dir,
-        watch_script_path: workspaces_root.join("tmp/whispercpp-listen/watch_dji_mic.sh"),
+        watch_script_path: workspaces_root.join("repos/yuiclaw/scripts/watch_dji_mic.sh"),
         listener_script_path,
         agent_script_path,
         overlay_root,
@@ -497,7 +497,7 @@ mod tests {
         assert_eq!(config.watch_session, "whisper-watch-mic");
         assert_eq!(
             config.watch_script_path,
-            Path::new("/workspaces/tmp/whispercpp-listen/watch_dji_mic.sh")
+            Path::new("/workspaces/repos/yuiclaw/scripts/watch_dji_mic.sh")
         );
         assert_eq!(
             config.legacy_overlay_sessions,
