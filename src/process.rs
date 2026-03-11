@@ -1981,7 +1981,10 @@ fn resolve_daemon_session_workdir_from_env_value(raw: Option<String>) -> Option<
 }
 
 fn daemon_session_workdir() -> Option<PathBuf> {
+    // Prefer YUICLAW_HOME, fall back to YUICLAW_WORKSPACES_ROOT, then auto-detect.
     resolve_daemon_session_workdir_from_env_value(std::env::var("YUICLAW_HOME").ok())
+        .or_else(|| resolve_daemon_session_workdir_from_env_value(std::env::var("YUICLAW_WORKSPACES_ROOT").ok()))
+        .or_else(|| Some(crate::voice_command::resolve_workspaces_root()))
 }
 
 fn apply_spawn_workdir_if_configured(cmd: &mut std::process::Command, workdir: Option<&Path>) {
@@ -2083,6 +2086,29 @@ mod tests {
             resolve_daemon_session_workdir_from_env_value(Some(" /tmp/yuiclaw-home ".into()))
                 .expect("path should be parsed");
         assert_eq!(path, PathBuf::from("/tmp/yuiclaw-home"));
+    }
+
+    #[test]
+    fn daemon_session_workdir_falls_back_to_workspaces_root_when_env_unset() {
+        let _guard = env_lock();
+        unsafe {
+            std::env::remove_var("YUICLAW_HOME");
+            std::env::remove_var("YUICLAW_WORKSPACES_ROOT");
+        }
+        // Should never return None — always resolves to some workspaces root.
+        assert!(daemon_session_workdir().is_some());
+    }
+
+    #[test]
+    fn daemon_session_workdir_prefers_yuiclaw_home() {
+        let _guard = env_lock();
+        unsafe {
+            std::env::set_var("YUICLAW_HOME", "/tmp/yuiclaw-home-test");
+            std::env::remove_var("YUICLAW_WORKSPACES_ROOT");
+        }
+        let dir = daemon_session_workdir().unwrap();
+        assert_eq!(dir, PathBuf::from("/tmp/yuiclaw-home-test"));
+        unsafe { std::env::remove_var("YUICLAW_HOME"); }
     }
 
     #[test]
