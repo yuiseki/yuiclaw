@@ -13,12 +13,36 @@ pub struct VoiceCommandLaunchSpec {
 pub struct VoiceCommandOperatorRuntimeConfig {
     pub workspaces_root: PathBuf,
     pub watch_script_path: PathBuf,
+    pub listener_script_path: PathBuf,
+    pub agent_script_path: PathBuf,
+    pub overlay_root: PathBuf,
+    pub lock_screen_root: PathBuf,
+    pub stt_backend: String,
+    pub moonshine_model_size: String,
+    pub server_bin: PathBuf,
+    pub server_model: PathBuf,
+    pub server_host: String,
+    pub server_port: String,
+    pub server_url: String,
+    pub whisper_language: String,
+    pub whisper_mic_source: Option<String>,
+    pub whisper_listen_tmp_dir: PathBuf,
     pub server_session: String,
     pub listener_session: String,
     pub agent_session: String,
     pub overlay_session: String,
+    pub overlay_host: String,
+    pub overlay_port: String,
+    pub overlay_display: Option<String>,
+    pub overlay_xauthority: Option<String>,
     pub lock_screen_session: String,
     pub lock_screen_port: String,
+    pub lock_screen_display: Option<String>,
+    pub lock_screen_xauthority: Option<String>,
+    pub whisper_agent_no_overlay: bool,
+    pub biometric_password_file: Option<PathBuf>,
+    pub biometric_password_private_key: Option<PathBuf>,
+    pub biometric_unlock_signal_file: Option<PathBuf>,
     pub watch_session: String,
     pub legacy_overlay_sessions: Vec<String>,
 }
@@ -158,8 +182,97 @@ pub fn resolve_voice_command_operator_script_path(workspaces_root: &Path) -> Pat
 
 pub fn resolve_voice_command_operator_runtime_config() -> VoiceCommandOperatorRuntimeConfig {
     let workspaces_root = resolve_workspaces_root();
+    let stt_backend = std::env::var("STT_BACKEND").unwrap_or_else(|_| "moonshine".to_string());
+    let moonshine_model_size =
+        std::env::var("MOONSHINE_MODEL_SIZE").unwrap_or_else(|_| "base".to_string());
+    let whisper_root = std::env::var_os("WHISPER_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| workspaces_root.join("repos/whisper.cpp"));
+    let server_bin = std::env::var_os("WHISPER_SERVER_BIN")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| whisper_root.join("build/bin/whisper-server"));
+    let default_model = whisper_root.join("models/ggml-small.bin");
+    let server_model = std::env::var_os("WHISPER_SERVER_MODEL")
+        .map(PathBuf::from)
+        .unwrap_or(default_model);
+    let server_host =
+        std::env::var("WHISPER_SERVER_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let server_port = std::env::var("WHISPER_SERVER_PORT").unwrap_or_else(|_| "18080".to_string());
+    let server_url = format!("http://{}:{}", server_host, server_port);
+    let whisper_language = std::env::var("WHISPER_LANGUAGE").unwrap_or_else(|_| "ja".to_string());
+    let whisper_mic_source = std::env::var("WHISPER_MIC_SOURCE")
+        .ok()
+        .filter(|value| !value.is_empty());
+    let whisper_listen_tmp_dir = std::env::var_os("WHISPER_LISTEN_TMP_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/home/yuiseki/Workspaces/private/datasets/voices/_raw"));
+    let overlay_root = std::env::var_os("CAPTION_OVERLAY_ROOT")
+        .or_else(|| std::env::var_os("CAPTION_OVERLAY_POC_ROOT"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|| workspaces_root.join("repos/acaption"));
+    let overlay_host = std::env::var("WHISPER_AGENT_OVERLAY_IPC_HOST")
+        .or_else(|_| std::env::var("CAPTION_OVERLAY_IPC_HOST"))
+        .unwrap_or_else(|_| "127.0.0.1".to_string());
+    let overlay_port = std::env::var("WHISPER_AGENT_OVERLAY_IPC_PORT")
+        .or_else(|_| std::env::var("CAPTION_OVERLAY_IPC_PORT"))
+        .unwrap_or_else(|_| "47832".to_string());
+    let overlay_display = std::env::var("CAPTION_OVERLAY_DISPLAY")
+        .ok()
+        .filter(|value| !value.is_empty());
+    let overlay_xauthority = std::env::var("CAPTION_OVERLAY_XAUTHORITY")
+        .ok()
+        .filter(|value| !value.is_empty());
+    let lock_screen_root = std::env::var_os("LOCK_SCREEN_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| workspaces_root.join("repos/asec"));
+    let lock_screen_display = std::env::var("ASEC_DISPLAY")
+        .ok()
+        .filter(|value| !value.is_empty());
+    let lock_screen_xauthority = std::env::var("ASEC_XAUTHORITY")
+        .ok()
+        .filter(|value| !value.is_empty());
+    let whisper_agent_no_overlay = std::env::var("WHISPER_AGENT_NO_OVERLAY")
+        .map(|value| value == "1")
+        .unwrap_or(false);
+    let biometric_password_file = std::env::var_os("WHISPER_AGENT_BIOMETRIC_PASSWORD_FILE")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from);
+    let biometric_password_private_key =
+        std::env::var_os("WHISPER_AGENT_BIOMETRIC_PASSWORD_PRIVATE_KEY")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from);
+    let biometric_unlock_signal_file =
+        std::env::var_os("WHISPER_AGENT_BIOMETRIC_UNLOCK_SIGNAL_FILE")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from);
+    let listener_script_path = std::env::var_os("WHISPER_LISTENER_SCRIPT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            if stt_backend == "moonshine" {
+                workspaces_root.join("tmp/whispercpp-listen/listen_only_moonshine_server.py")
+            } else {
+                workspaces_root.join("tmp/whispercpp-listen/listen_only_whisper_server.py")
+            }
+        });
+    let agent_script_path = std::env::var_os("WHISPER_AGENT_SCRIPT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| workspaces_root.join("tmp/whispercpp-listen/voice_command_loop.py"));
     VoiceCommandOperatorRuntimeConfig {
+        stt_backend,
+        moonshine_model_size,
+        server_bin,
+        server_model,
+        server_host,
+        server_port,
+        server_url,
+        whisper_language,
+        whisper_mic_source,
+        whisper_listen_tmp_dir,
         watch_script_path: workspaces_root.join("tmp/whispercpp-listen/watch_dji_mic.sh"),
+        listener_script_path,
+        agent_script_path,
+        overlay_root,
+        lock_screen_root,
         server_session: std::env::var("WHISPER_SERVER_SESSION")
             .unwrap_or_else(|_| "whisper-server-ja".to_string()),
         listener_session: std::env::var("WHISPER_LISTENER_SESSION")
@@ -168,10 +281,20 @@ pub fn resolve_voice_command_operator_runtime_config() -> VoiceCommandOperatorRu
             .unwrap_or_else(|_| "whisper-agent-ja".to_string()),
         overlay_session: std::env::var("CAPTION_OVERLAY_SESSION")
             .unwrap_or_else(|_| "acaption-overlay".to_string()),
+        overlay_host,
+        overlay_port,
+        overlay_display,
+        overlay_xauthority,
         lock_screen_session: std::env::var("LOCK_SCREEN_SESSION")
             .unwrap_or_else(|_| "asec-lock-screen".to_string()),
         lock_screen_port: std::env::var("WHISPER_AGENT_LOCK_SCREEN_IPC_PORT")
             .unwrap_or_else(|_| "47833".to_string()),
+        lock_screen_display,
+        lock_screen_xauthority,
+        whisper_agent_no_overlay,
+        biometric_password_file,
+        biometric_password_private_key,
+        biometric_unlock_signal_file,
         watch_session: std::env::var("WHISPER_WATCH_SESSION")
             .unwrap_or_else(|_| "whisper-watch-mic".to_string()),
         legacy_overlay_sessions: vec![
@@ -367,6 +490,32 @@ mod tests {
         let _guard = env_lock();
         unsafe {
             std::env::set_var("YUICLAW_WORKSPACES_ROOT", "/workspaces");
+            std::env::remove_var("STT_BACKEND");
+            std::env::remove_var("MOONSHINE_MODEL_SIZE");
+            std::env::remove_var("WHISPER_SERVER_BIN");
+            std::env::remove_var("WHISPER_SERVER_MODEL");
+            std::env::remove_var("WHISPER_SERVER_HOST");
+            std::env::remove_var("WHISPER_SERVER_PORT");
+            std::env::remove_var("WHISPER_LANGUAGE");
+            std::env::remove_var("WHISPER_MIC_SOURCE");
+            std::env::remove_var("WHISPER_LISTEN_TMP_DIR");
+            std::env::remove_var("WHISPER_LISTENER_SCRIPT");
+            std::env::remove_var("WHISPER_AGENT_SCRIPT");
+            std::env::remove_var("CAPTION_OVERLAY_ROOT");
+            std::env::remove_var("CAPTION_OVERLAY_POC_ROOT");
+            std::env::remove_var("WHISPER_AGENT_OVERLAY_IPC_HOST");
+            std::env::remove_var("CAPTION_OVERLAY_IPC_HOST");
+            std::env::remove_var("WHISPER_AGENT_OVERLAY_IPC_PORT");
+            std::env::remove_var("CAPTION_OVERLAY_IPC_PORT");
+            std::env::remove_var("CAPTION_OVERLAY_DISPLAY");
+            std::env::remove_var("CAPTION_OVERLAY_XAUTHORITY");
+            std::env::remove_var("LOCK_SCREEN_ROOT");
+            std::env::remove_var("ASEC_DISPLAY");
+            std::env::remove_var("ASEC_XAUTHORITY");
+            std::env::remove_var("WHISPER_AGENT_NO_OVERLAY");
+            std::env::remove_var("WHISPER_AGENT_BIOMETRIC_PASSWORD_FILE");
+            std::env::remove_var("WHISPER_AGENT_BIOMETRIC_PASSWORD_PRIVATE_KEY");
+            std::env::remove_var("WHISPER_AGENT_BIOMETRIC_UNLOCK_SIGNAL_FILE");
             std::env::remove_var("WHISPER_SERVER_SESSION");
             std::env::remove_var("WHISPER_LISTENER_SESSION");
             std::env::remove_var("WHISPER_AGENT_SESSION");
@@ -378,6 +527,28 @@ mod tests {
 
         let config = resolve_voice_command_operator_runtime_config();
 
+        assert_eq!(config.stt_backend, "moonshine");
+        assert_eq!(config.moonshine_model_size, "base");
+        assert_eq!(
+            config.listener_script_path,
+            Path::new("/workspaces/tmp/whispercpp-listen/listen_only_moonshine_server.py")
+        );
+        assert_eq!(
+            config.agent_script_path,
+            Path::new("/workspaces/tmp/whispercpp-listen/voice_command_loop.py")
+        );
+        assert_eq!(config.server_url, "http://127.0.0.1:18080");
+        assert_eq!(config.whisper_language, "ja");
+        assert_eq!(config.whisper_mic_source, None);
+        assert_eq!(config.overlay_root, Path::new("/workspaces/repos/acaption"));
+        assert_eq!(config.overlay_host, "127.0.0.1");
+        assert_eq!(config.overlay_port, "47832");
+        assert_eq!(config.overlay_display, None);
+        assert_eq!(config.overlay_xauthority, None);
+        assert_eq!(config.lock_screen_root, Path::new("/workspaces/repos/asec"));
+        assert_eq!(config.lock_screen_display, None);
+        assert_eq!(config.lock_screen_xauthority, None);
+        assert!(!config.whisper_agent_no_overlay);
         assert_eq!(config.server_session, "whisper-server-ja");
         assert_eq!(config.listener_session, "whisper-listen-ja");
         assert_eq!(config.agent_session, "whisper-agent-ja");
@@ -407,6 +578,33 @@ mod tests {
         let _guard = env_lock();
         unsafe {
             std::env::set_var("YUICLAW_WORKSPACES_ROOT", "/workspaces");
+            std::env::set_var("STT_BACKEND", "whisper");
+            std::env::set_var("MOONSHINE_MODEL_SIZE", "tiny");
+            std::env::set_var("WHISPER_SERVER_HOST", "0.0.0.0");
+            std::env::set_var("WHISPER_SERVER_PORT", "19090");
+            std::env::set_var("WHISPER_LANGUAGE", "en");
+            std::env::set_var("WHISPER_MIC_SOURCE", "alsa_input.usb");
+            std::env::set_var("WHISPER_LISTEN_TMP_DIR", "/tmp/voices");
+            std::env::set_var("WHISPER_LISTENER_SCRIPT", "/tmp/listener.py");
+            std::env::set_var("WHISPER_AGENT_SCRIPT", "/tmp/agent.py");
+            std::env::set_var("CAPTION_OVERLAY_ROOT", "/tmp/acaption");
+            std::env::set_var("WHISPER_AGENT_OVERLAY_IPC_HOST", "10.0.0.5");
+            std::env::set_var("WHISPER_AGENT_OVERLAY_IPC_PORT", "49000");
+            std::env::set_var("CAPTION_OVERLAY_DISPLAY", ":1");
+            std::env::set_var("CAPTION_OVERLAY_XAUTHORITY", "/tmp/xauth-overlay");
+            std::env::set_var("LOCK_SCREEN_ROOT", "/tmp/asec");
+            std::env::set_var("ASEC_DISPLAY", ":2");
+            std::env::set_var("ASEC_XAUTHORITY", "/tmp/xauth-lock");
+            std::env::set_var("WHISPER_AGENT_NO_OVERLAY", "1");
+            std::env::set_var("WHISPER_AGENT_BIOMETRIC_PASSWORD_FILE", "/tmp/password.enc");
+            std::env::set_var(
+                "WHISPER_AGENT_BIOMETRIC_PASSWORD_PRIVATE_KEY",
+                "/tmp/key.pem",
+            );
+            std::env::set_var(
+                "WHISPER_AGENT_BIOMETRIC_UNLOCK_SIGNAL_FILE",
+                "/tmp/unlock.signal",
+            );
             std::env::set_var("WHISPER_SERVER_SESSION", "server-x");
             std::env::set_var("WHISPER_LISTENER_SESSION", "listener-x");
             std::env::set_var("WHISPER_AGENT_SESSION", "agent-x");
@@ -418,6 +616,41 @@ mod tests {
 
         let config = resolve_voice_command_operator_runtime_config();
 
+        assert_eq!(config.stt_backend, "whisper");
+        assert_eq!(config.moonshine_model_size, "tiny");
+        assert_eq!(config.server_url, "http://0.0.0.0:19090");
+        assert_eq!(config.whisper_language, "en");
+        assert_eq!(config.whisper_mic_source.as_deref(), Some("alsa_input.usb"));
+        assert_eq!(config.whisper_listen_tmp_dir, Path::new("/tmp/voices"));
+        assert_eq!(config.listener_script_path, Path::new("/tmp/listener.py"));
+        assert_eq!(config.agent_script_path, Path::new("/tmp/agent.py"));
+        assert_eq!(config.overlay_root, Path::new("/tmp/acaption"));
+        assert_eq!(config.overlay_host, "10.0.0.5");
+        assert_eq!(config.overlay_port, "49000");
+        assert_eq!(config.overlay_display.as_deref(), Some(":1"));
+        assert_eq!(
+            config.overlay_xauthority.as_deref(),
+            Some("/tmp/xauth-overlay")
+        );
+        assert_eq!(config.lock_screen_root, Path::new("/tmp/asec"));
+        assert_eq!(config.lock_screen_display.as_deref(), Some(":2"));
+        assert_eq!(
+            config.lock_screen_xauthority.as_deref(),
+            Some("/tmp/xauth-lock")
+        );
+        assert!(config.whisper_agent_no_overlay);
+        assert_eq!(
+            config.biometric_password_file.as_deref(),
+            Some(Path::new("/tmp/password.enc"))
+        );
+        assert_eq!(
+            config.biometric_password_private_key.as_deref(),
+            Some(Path::new("/tmp/key.pem"))
+        );
+        assert_eq!(
+            config.biometric_unlock_signal_file.as_deref(),
+            Some(Path::new("/tmp/unlock.signal"))
+        );
         assert_eq!(config.server_session, "server-x");
         assert_eq!(config.listener_session, "listener-x");
         assert_eq!(config.agent_session, "agent-x");
@@ -428,6 +661,27 @@ mod tests {
 
         unsafe {
             std::env::remove_var("YUICLAW_WORKSPACES_ROOT");
+            std::env::remove_var("STT_BACKEND");
+            std::env::remove_var("MOONSHINE_MODEL_SIZE");
+            std::env::remove_var("WHISPER_SERVER_HOST");
+            std::env::remove_var("WHISPER_SERVER_PORT");
+            std::env::remove_var("WHISPER_LANGUAGE");
+            std::env::remove_var("WHISPER_MIC_SOURCE");
+            std::env::remove_var("WHISPER_LISTEN_TMP_DIR");
+            std::env::remove_var("WHISPER_LISTENER_SCRIPT");
+            std::env::remove_var("WHISPER_AGENT_SCRIPT");
+            std::env::remove_var("CAPTION_OVERLAY_ROOT");
+            std::env::remove_var("WHISPER_AGENT_OVERLAY_IPC_HOST");
+            std::env::remove_var("WHISPER_AGENT_OVERLAY_IPC_PORT");
+            std::env::remove_var("CAPTION_OVERLAY_DISPLAY");
+            std::env::remove_var("CAPTION_OVERLAY_XAUTHORITY");
+            std::env::remove_var("LOCK_SCREEN_ROOT");
+            std::env::remove_var("ASEC_DISPLAY");
+            std::env::remove_var("ASEC_XAUTHORITY");
+            std::env::remove_var("WHISPER_AGENT_NO_OVERLAY");
+            std::env::remove_var("WHISPER_AGENT_BIOMETRIC_PASSWORD_FILE");
+            std::env::remove_var("WHISPER_AGENT_BIOMETRIC_PASSWORD_PRIVATE_KEY");
+            std::env::remove_var("WHISPER_AGENT_BIOMETRIC_UNLOCK_SIGNAL_FILE");
             std::env::remove_var("WHISPER_SERVER_SESSION");
             std::env::remove_var("WHISPER_LISTENER_SESSION");
             std::env::remove_var("WHISPER_AGENT_SESSION");

@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Stdio;
-use tokio::net::UnixStream;
+use tokio::net::{TcpStream, UnixStream};
 use tokio::process::Command;
 
 #[derive(Debug, Clone, Copy)]
@@ -330,8 +330,677 @@ async fn tmux_kill_session_if_exists(
 }
 
 fn shell_single_quote(path: &Path) -> String {
-    let raw = path.display().to_string();
+    shell_single_quote_str(&path.display().to_string())
+}
+
+fn shell_single_quote_str(raw: &str) -> String {
     format!("'{}'", raw.replace('\'', r"'\''"))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum VoiceCommandServiceState {
+    Running(String),
+    Stopped(String),
+    Disabled(String),
+    NotApplicable(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum VoiceCommandEndpointState {
+    Ready(String, String),
+    NotReady(String, String),
+    Disabled(String),
+    NotApplicable(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct VoiceCommandStatusSnapshot {
+    stt_backend: String,
+    moonshine_model_size: String,
+    server_session: String,
+    server_url: String,
+    server_model: String,
+    language: String,
+    listener_session: String,
+    agent_session: String,
+    overlay_session: String,
+    lock_screen_session: String,
+    overlay_ipc: String,
+    lock_screen_ipc: String,
+    listener_script: String,
+    agent_script: String,
+    mic_source: String,
+    active_listener_source: Option<String>,
+    active_agent_source: Option<String>,
+    server_session_state: VoiceCommandServiceState,
+    listener_session_state: VoiceCommandServiceState,
+    agent_session_state: VoiceCommandServiceState,
+    overlay_session_state: VoiceCommandServiceState,
+    lock_screen_session_state: VoiceCommandServiceState,
+    server_endpoint: VoiceCommandEndpointState,
+    overlay_endpoint: VoiceCommandEndpointState,
+    lock_screen_endpoint: VoiceCommandEndpointState,
+    contention_warning: bool,
+}
+
+fn extract_parec_source_from_args(args: &str) -> Option<String> {
+    let mut parts = args.split_whitespace();
+    if parts.next()? != "parec" {
+        return None;
+    }
+
+    while let Some(part) = parts.next() {
+        if part == "-d" {
+            return parts.next().map(ToOwned::to_owned);
+        }
+    }
+    None
+}
+
+async fn tmux_pane_pid(session: &str) -> Option<String> {
+    let output = Command::new("tmux")
+        .arg("list-panes")
+        .arg("-t")
+        .arg(format!("{session}:0"))
+        .arg("-F")
+        .arg("#{pane_pid}")
+        .output()
+        .await
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+async fn parec_source_for_pid(parent_pid: &str) -> Option<String> {
+    let output = Command::new("pgrep")
+        .arg("-P")
+        .arg(parent_pid)
+        .output()
+        .await
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let child_pids = String::from_utf8_lossy(&output.stdout);
+    for child_pid in child_pids
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
+        let ps_output = Command::new("ps")
+            .arg("-p")
+            .arg(child_pid)
+            .arg("-o")
+            .arg("args=")
+            .output()
+            .await
+            .ok()?;
+        if !ps_output.status.success() {
+            continue;
+        }
+        let args = String::from_utf8_lossy(&ps_output.stdout);
+        if let Some(source) = extract_parec_source_from_args(args.trim()) {
+            return Some(source);
+        }
+    }
+    None
+}
+
+async fn active_source_for_session(session: &str) -> Option<String> {
+    let pane_pid = tmux_pane_pid(session).await?;
+    parec_source_for_pid(&pane_pid).await
+}
+
+async fn http_endpoint_ready(url: &str) -> bool {
+    Command::new("curl")
+        .arg("-fsS")
+        .arg("--max-time")
+        .arg("2")
+        .arg(format!("{url}/"))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+async fn tcp_endpoint_ready(host: &str, port: &str) -> bool {
+    let port = match port.parse::<u16>() {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    TcpStream::connect((host, port)).await.is_ok()
+}
+
+async fn wait_tcp_endpoint_ready(host: &str, port: &str, timeout_sec: u64) -> bool {
+    for _ in 0..(timeout_sec * 2) {
+        if tcp_endpoint_ready(host, port).await {
+            return true;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    false
+}
+
+fn render_service_state(label: &str, state: &VoiceCommandServiceState) -> String {
+    match state {
+        VoiceCommandServiceState::Running(session) => format!("  {label}: RUNNING ({session})"),
+        VoiceCommandServiceState::Stopped(session) => format!("  {label}: STOPPED ({session})"),
+        VoiceCommandServiceState::Disabled(session) => format!("  {label}: DISABLED ({session})"),
+        VoiceCommandServiceState::NotApplicable(reason) => format!("  {label}: N/A ({reason})"),
+    }
+}
+
+fn render_endpoint_state(state: &VoiceCommandEndpointState) -> String {
+    match state {
+        VoiceCommandEndpointState::Ready(label, target) => format!("  ready: {label} ({target})"),
+        VoiceCommandEndpointState::NotReady(label, target) => {
+            format!("  ready: {label} ({target})")
+        }
+        VoiceCommandEndpointState::Disabled(reason) => format!("  disabled: yes ({reason})"),
+        VoiceCommandEndpointState::NotApplicable(reason) => format!("  N/A ({reason})"),
+    }
+}
+
+fn render_voice_command_status(snapshot: &VoiceCommandStatusSnapshot) -> String {
+    let mut lines = vec![format!("stt_backend={}", snapshot.stt_backend)];
+    if snapshot.stt_backend == "moonshine" {
+        lines.push(format!(
+            "moonshine_model_size={}",
+            snapshot.moonshine_model_size
+        ));
+    } else {
+        lines.push(format!("server_session={}", snapshot.server_session));
+        lines.push(format!("server_url={}", snapshot.server_url));
+        lines.push(format!("model={}", snapshot.server_model));
+        lines.push(format!("language={}", snapshot.language));
+    }
+    lines.push(format!("listener_session={}", snapshot.listener_session));
+    lines.push(format!("agent_session={}", snapshot.agent_session));
+    lines.push(format!("overlay_session={}", snapshot.overlay_session));
+    lines.push(format!(
+        "lock_screen_session={}",
+        snapshot.lock_screen_session
+    ));
+    lines.push(format!("overlay_ipc={}", snapshot.overlay_ipc));
+    lines.push(format!("lock_screen_ipc={}", snapshot.lock_screen_ipc));
+    lines.push(format!("listener_script={}", snapshot.listener_script));
+    lines.push(format!("agent_script={}", snapshot.agent_script));
+    lines.push(format!("mic_source={}", snapshot.mic_source));
+    if let Some(source) = &snapshot.active_listener_source {
+        lines.push(format!("active_listener_source={source}"));
+    }
+    if let Some(source) = &snapshot.active_agent_source {
+        lines.push(format!("active_agent_source={source}"));
+    }
+
+    lines.push(String::new());
+    lines.push("[tmux sessions]".to_string());
+    lines.push(render_service_state(
+        "server",
+        &snapshot.server_session_state,
+    ));
+    lines.push(render_service_state(
+        "listener",
+        &snapshot.listener_session_state,
+    ));
+    lines.push(render_service_state("agent", &snapshot.agent_session_state));
+    if snapshot.contention_warning {
+        lines.push("  warning: listener+agent microphone contention likely".to_string());
+    }
+    lines.push(render_service_state(
+        "overlay",
+        &snapshot.overlay_session_state,
+    ));
+    lines.push(render_service_state(
+        "lock-screen",
+        &snapshot.lock_screen_session_state,
+    ));
+
+    lines.push(String::new());
+    lines.push("[server endpoint]".to_string());
+    lines.push(render_endpoint_state(&snapshot.server_endpoint));
+    lines.push(String::new());
+    lines.push("[overlay endpoint]".to_string());
+    lines.push(render_endpoint_state(&snapshot.overlay_endpoint));
+    lines.push(String::new());
+    lines.push("[lock screen endpoint]".to_string());
+    lines.push(render_endpoint_state(&snapshot.lock_screen_endpoint));
+    lines.push(String::new());
+    lines.join("\n")
+}
+
+async fn collect_voice_command_status(
+    runtime: &crate::voice_command::VoiceCommandOperatorRuntimeConfig,
+) -> VoiceCommandStatusSnapshot {
+    let listener_running = tmux_has_session(&runtime.listener_session).await;
+    let agent_running = tmux_has_session(&runtime.agent_session).await;
+    let overlay_running = tmux_has_session(&runtime.overlay_session).await;
+    let lock_screen_running = if runtime.lock_screen_port == "0" {
+        false
+    } else {
+        tmux_has_session(&runtime.lock_screen_session).await
+    };
+    let server_running = if runtime.stt_backend == "moonshine" {
+        false
+    } else {
+        tmux_has_session(&runtime.server_session).await
+    };
+    let server_ready = if runtime.stt_backend == "moonshine" {
+        false
+    } else {
+        http_endpoint_ready(&runtime.server_url).await
+    };
+    let overlay_ready = if runtime.whisper_agent_no_overlay {
+        false
+    } else {
+        tcp_endpoint_ready(&runtime.overlay_host, &runtime.overlay_port).await
+    };
+    let lock_screen_ready = if runtime.whisper_agent_no_overlay || runtime.lock_screen_port == "0" {
+        false
+    } else {
+        tcp_endpoint_ready(&runtime.overlay_host, &runtime.lock_screen_port).await
+    };
+
+    VoiceCommandStatusSnapshot {
+        stt_backend: runtime.stt_backend.clone(),
+        moonshine_model_size: runtime.moonshine_model_size.clone(),
+        server_session: runtime.server_session.clone(),
+        server_url: runtime.server_url.clone(),
+        server_model: runtime.server_model.display().to_string(),
+        language: runtime.whisper_language.clone(),
+        listener_session: runtime.listener_session.clone(),
+        agent_session: runtime.agent_session.clone(),
+        overlay_session: runtime.overlay_session.clone(),
+        lock_screen_session: runtime.lock_screen_session.clone(),
+        overlay_ipc: format!("{}:{}", runtime.overlay_host, runtime.overlay_port),
+        lock_screen_ipc: format!("{}:{}", runtime.overlay_host, runtime.lock_screen_port),
+        listener_script: runtime.listener_script_path.display().to_string(),
+        agent_script: runtime.agent_script_path.display().to_string(),
+        mic_source: runtime
+            .whisper_mic_source
+            .clone()
+            .unwrap_or_else(|| "<auto>".to_string()),
+        active_listener_source: active_source_for_session(&runtime.listener_session).await,
+        active_agent_source: active_source_for_session(&runtime.agent_session).await,
+        server_session_state: if runtime.stt_backend == "moonshine" {
+            VoiceCommandServiceState::NotApplicable(
+                "moonshine backend — no whisper-server needed".to_string(),
+            )
+        } else if server_running {
+            VoiceCommandServiceState::Running(runtime.server_session.clone())
+        } else {
+            VoiceCommandServiceState::Stopped(runtime.server_session.clone())
+        },
+        listener_session_state: if listener_running {
+            VoiceCommandServiceState::Running(runtime.listener_session.clone())
+        } else {
+            VoiceCommandServiceState::Stopped(runtime.listener_session.clone())
+        },
+        agent_session_state: if agent_running {
+            VoiceCommandServiceState::Running(runtime.agent_session.clone())
+        } else {
+            VoiceCommandServiceState::Stopped(runtime.agent_session.clone())
+        },
+        overlay_session_state: if overlay_running {
+            VoiceCommandServiceState::Running(runtime.overlay_session.clone())
+        } else {
+            VoiceCommandServiceState::Stopped(runtime.overlay_session.clone())
+        },
+        lock_screen_session_state: if runtime.lock_screen_port == "0" {
+            VoiceCommandServiceState::Disabled(runtime.lock_screen_session.clone())
+        } else if lock_screen_running {
+            VoiceCommandServiceState::Running(runtime.lock_screen_session.clone())
+        } else {
+            VoiceCommandServiceState::Stopped(runtime.lock_screen_session.clone())
+        },
+        server_endpoint: if runtime.stt_backend == "moonshine" {
+            VoiceCommandEndpointState::NotApplicable("moonshine backend".to_string())
+        } else if server_ready {
+            VoiceCommandEndpointState::Ready("yes".to_string(), format!("{}/", runtime.server_url))
+        } else {
+            VoiceCommandEndpointState::NotReady(
+                "no".to_string(),
+                format!("{}/", runtime.server_url),
+            )
+        },
+        overlay_endpoint: if runtime.whisper_agent_no_overlay {
+            VoiceCommandEndpointState::Disabled("WHISPER_AGENT_NO_OVERLAY=1".to_string())
+        } else if overlay_ready {
+            VoiceCommandEndpointState::Ready(
+                "yes".to_string(),
+                format!("{}:{}", runtime.overlay_host, runtime.overlay_port),
+            )
+        } else {
+            VoiceCommandEndpointState::NotReady(
+                "no".to_string(),
+                format!("{}:{}", runtime.overlay_host, runtime.overlay_port),
+            )
+        },
+        lock_screen_endpoint: if runtime.whisper_agent_no_overlay {
+            VoiceCommandEndpointState::Disabled("WHISPER_AGENT_NO_OVERLAY=1".to_string())
+        } else if runtime.lock_screen_port == "0" {
+            VoiceCommandEndpointState::Disabled("WHISPER_AGENT_LOCK_SCREEN_IPC_PORT=0".to_string())
+        } else if lock_screen_ready {
+            VoiceCommandEndpointState::Ready(
+                "yes".to_string(),
+                format!("{}:{}", runtime.overlay_host, runtime.lock_screen_port),
+            )
+        } else {
+            VoiceCommandEndpointState::NotReady(
+                "no".to_string(),
+                format!("{}:{}", runtime.overlay_host, runtime.lock_screen_port),
+            )
+        },
+        contention_warning: listener_running && agent_running,
+    }
+}
+
+async fn print_voice_command_status(
+    runtime: &crate::voice_command::VoiceCommandOperatorRuntimeConfig,
+) {
+    let snapshot = collect_voice_command_status(runtime).await;
+    print!("{}", render_voice_command_status(&snapshot));
+}
+
+fn build_caption_overlay_start_command(
+    runtime: &crate::voice_command::VoiceCommandOperatorRuntimeConfig,
+) -> String {
+    let mut env_prefix = String::new();
+    if let Some(display) = &runtime.overlay_display {
+        env_prefix.push_str(&format!(
+            "export DISPLAY={}; export CAPTION_OVERLAY_DISPLAY={}; ",
+            shell_single_quote_str(display),
+            shell_single_quote_str(display),
+        ));
+    }
+    env_prefix.push_str("export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}; ");
+    if let Some(xauthority) = &runtime.overlay_xauthority {
+        env_prefix.push_str(&format!(
+            "export XAUTHORITY={}; export CAPTION_OVERLAY_XAUTHORITY={}; ",
+            shell_single_quote_str(xauthority),
+            shell_single_quote_str(xauthority),
+        ));
+    }
+    env_prefix.push_str(&format!(
+        "export CAPTION_OVERLAY_IPC_HOST={}; export CAPTION_OVERLAY_IPC_PORT={}; ",
+        shell_single_quote_str(&runtime.overlay_host),
+        shell_single_quote_str(&runtime.overlay_port),
+    ));
+
+    format!(
+        "cd {} && {}exec npm run start",
+        shell_single_quote(&runtime.overlay_root),
+        env_prefix
+    )
+}
+
+fn build_lock_screen_start_command(
+    runtime: &crate::voice_command::VoiceCommandOperatorRuntimeConfig,
+) -> String {
+    let mut env_prefix = String::new();
+    env_prefix.push_str("export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}; ");
+    if let Some(display) = &runtime.lock_screen_display {
+        env_prefix.push_str(&format!(
+            "export DISPLAY={}; export ASEC_DISPLAY={}; ",
+            shell_single_quote_str(display),
+            shell_single_quote_str(display),
+        ));
+    }
+    if let Some(xauthority) = &runtime.lock_screen_xauthority {
+        env_prefix.push_str(&format!(
+            "export XAUTHORITY={}; export ASEC_XAUTHORITY={}; ",
+            shell_single_quote_str(xauthority),
+            shell_single_quote_str(xauthority),
+        ));
+    }
+    env_prefix.push_str(&format!(
+        "export ASEC_IPC_PORT={}; ",
+        shell_single_quote_str(&runtime.lock_screen_port),
+    ));
+    if let Some(path) = &runtime.biometric_password_file {
+        env_prefix.push_str(&format!(
+            "export ASEC_BIOMETRIC_PASSWORD_FILE={}; ",
+            shell_single_quote(path),
+        ));
+    }
+    if let Some(path) = &runtime.biometric_password_private_key {
+        env_prefix.push_str(&format!(
+            "export ASEC_BIOMETRIC_PASSWORD_PRIVATE_KEY={}; ",
+            shell_single_quote(path),
+        ));
+    }
+    if let Some(path) = &runtime.biometric_unlock_signal_file {
+        env_prefix.push_str(&format!(
+            "export ASEC_BIOMETRIC_UNLOCK_SIGNAL_FILE={}; ",
+            shell_single_quote(path),
+        ));
+    }
+
+    format!(
+        "cd {} && {}exec npm run start:bridge -- --tcp-port {}",
+        shell_single_quote(&runtime.lock_screen_root),
+        env_prefix,
+        runtime.lock_screen_port
+    )
+}
+
+async fn start_tmux_session(
+    session: &str,
+    command: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let status = Command::new("tmux")
+        .arg("new-session")
+        .arg("-d")
+        .arg("-s")
+        .arg(session)
+        .arg(format!("bash -lc {}", shell_single_quote_str(command)))
+        .status()
+        .await?;
+    if !status.success() {
+        return Err(format!("failed to start tmux session: {session}").into());
+    }
+    Ok(())
+}
+
+fn require_command(cmd: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if is_command_in_path(cmd) {
+        return Ok(());
+    }
+    Err(format!("required command not found: {cmd}").into())
+}
+
+async fn stop_legacy_overlay_sessions(
+    runtime: &crate::voice_command::VoiceCommandOperatorRuntimeConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for session in &runtime.legacy_overlay_sessions {
+        if tmux_has_session(session).await {
+            let status = Command::new("tmux")
+                .arg("kill-session")
+                .arg("-t")
+                .arg(session)
+                .status()
+                .await?;
+            if !status.success() {
+                return Err(format!("failed to kill legacy overlay session: {session}").into());
+            }
+            println!("legacy overlay session stopped: {session}");
+        }
+    }
+    Ok(())
+}
+
+async fn stop_overlay_runtime(
+    runtime: &crate::voice_command::VoiceCommandOperatorRuntimeConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    tmux_kill_session_if_exists(
+        &runtime.overlay_session,
+        &format!("overlay stopped: {}", runtime.overlay_session),
+        &format!("overlay session not running: {}", runtime.overlay_session),
+    )
+    .await?;
+    if runtime.lock_screen_port != "0" {
+        tmux_kill_session_if_exists(
+            &runtime.lock_screen_session,
+            &format!("lock screen stopped: {}", runtime.lock_screen_session),
+            &format!(
+                "lock screen session not running: {}",
+                runtime.lock_screen_session
+            ),
+        )
+        .await?;
+    }
+    stop_legacy_overlay_sessions(runtime).await
+}
+
+async fn start_caption_overlay_runtime(
+    runtime: &crate::voice_command::VoiceCommandOperatorRuntimeConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if tmux_has_session(&runtime.overlay_session).await {
+        if tcp_endpoint_ready(&runtime.overlay_host, &runtime.overlay_port).await {
+            println!(
+                "overlay tmux session already exists and IPC is ready: {}",
+                runtime.overlay_session
+            );
+            return Ok(());
+        }
+        println!(
+            "overlay session exists but IPC is still not ready; restarting: {}",
+            runtime.overlay_session
+        );
+        tmux_kill_session_if_exists(
+            &runtime.overlay_session,
+            &format!("overlay stopped: {}", runtime.overlay_session),
+            &format!("overlay session not running: {}", runtime.overlay_session),
+        )
+        .await?;
+    }
+
+    if tcp_endpoint_ready(&runtime.overlay_host, &runtime.overlay_port).await {
+        println!(
+            "overlay IPC already ready at {}:{} (outside managed tmux session?)",
+            runtime.overlay_host, runtime.overlay_port
+        );
+        return Ok(());
+    }
+
+    if !runtime.overlay_root.is_dir() {
+        return Err(format!(
+            "caption overlay root not found: {}",
+            runtime.overlay_root.display()
+        )
+        .into());
+    }
+
+    let command = build_caption_overlay_start_command(runtime);
+    println!(
+        "starting acaption in tmux session {} (ipc={}:{})",
+        runtime.overlay_session, runtime.overlay_host, runtime.overlay_port
+    );
+    start_tmux_session(&runtime.overlay_session, &command).await?;
+
+    if !wait_tcp_endpoint_ready(&runtime.overlay_host, &runtime.overlay_port, 45).await {
+        return Err(format!(
+            "acaption failed to become ready at {}:{}",
+            runtime.overlay_host, runtime.overlay_port
+        )
+        .into());
+    }
+    println!(
+        "acaption ready: {}:{}",
+        runtime.overlay_host, runtime.overlay_port
+    );
+    Ok(())
+}
+
+async fn start_lock_screen_overlay_runtime(
+    runtime: &crate::voice_command::VoiceCommandOperatorRuntimeConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if runtime.lock_screen_port == "0" {
+        println!("lock screen start skipped (WHISPER_AGENT_LOCK_SCREEN_IPC_PORT=0)");
+        return Ok(());
+    }
+
+    if tmux_has_session(&runtime.lock_screen_session).await {
+        if tcp_endpoint_ready(&runtime.overlay_host, &runtime.lock_screen_port).await {
+            println!(
+                "lock screen tmux session already exists and IPC is ready: {}",
+                runtime.lock_screen_session
+            );
+            return Ok(());
+        }
+        println!(
+            "lock screen session exists but IPC is still not ready; restarting: {}",
+            runtime.lock_screen_session
+        );
+        tmux_kill_session_if_exists(
+            &runtime.lock_screen_session,
+            &format!("lock screen stopped: {}", runtime.lock_screen_session),
+            &format!(
+                "lock screen session not running: {}",
+                runtime.lock_screen_session
+            ),
+        )
+        .await?;
+    }
+
+    if tcp_endpoint_ready(&runtime.overlay_host, &runtime.lock_screen_port).await {
+        println!(
+            "lock screen IPC already ready at {}:{} (outside managed tmux session?)",
+            runtime.overlay_host, runtime.lock_screen_port
+        );
+        return Ok(());
+    }
+
+    if !runtime.lock_screen_root.is_dir() {
+        return Err(format!(
+            "lock screen root not found: {}",
+            runtime.lock_screen_root.display()
+        )
+        .into());
+    }
+
+    let command = build_lock_screen_start_command(runtime);
+    println!(
+        "starting asec in tmux session {} (ipc={}:{})",
+        runtime.lock_screen_session, runtime.overlay_host, runtime.lock_screen_port
+    );
+    start_tmux_session(&runtime.lock_screen_session, &command).await?;
+
+    if !wait_tcp_endpoint_ready(&runtime.overlay_host, &runtime.lock_screen_port, 45).await {
+        return Err(format!(
+            "asec failed to become ready at {}:{}",
+            runtime.overlay_host, runtime.lock_screen_port
+        )
+        .into());
+    }
+    println!(
+        "asec ready: {}:{}",
+        runtime.overlay_host, runtime.lock_screen_port
+    );
+    Ok(())
+}
+
+async fn start_overlay_runtime(
+    runtime: &crate::voice_command::VoiceCommandOperatorRuntimeConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if runtime.whisper_agent_no_overlay {
+        println!("overlay start skipped (WHISPER_AGENT_NO_OVERLAY=1)");
+        return Ok(());
+    }
+    require_command("npm")?;
+    stop_legacy_overlay_sessions(runtime).await?;
+    start_caption_overlay_runtime(runtime).await?;
+    start_lock_screen_overlay_runtime(runtime).await
 }
 
 fn voice_command_operator_log_session<'a>(
@@ -410,6 +1079,21 @@ async fn run_direct_voice_command_operator_action(
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let runtime = resolve_voice_command_operator_runtime_config();
     match action {
+        VoiceCommandOperatorAction::Status => {
+            print_voice_command_status(&runtime).await;
+            Ok(true)
+        }
+        VoiceCommandOperatorAction::StartOverlay => {
+            start_overlay_runtime(&runtime).await?;
+            print_voice_command_status(&runtime).await;
+            Ok(true)
+        }
+        VoiceCommandOperatorAction::RestartOverlay => {
+            stop_overlay_runtime(&runtime).await?;
+            start_overlay_runtime(&runtime).await?;
+            print_voice_command_status(&runtime).await;
+            Ok(true)
+        }
         VoiceCommandOperatorAction::Stop => {
             tmux_kill_session_if_exists(
                 &runtime.listener_session,
@@ -429,39 +1113,7 @@ async fn run_direct_voice_command_operator_action(
             Ok(true)
         }
         VoiceCommandOperatorAction::StopOverlay => {
-            tmux_kill_session_if_exists(
-                &runtime.overlay_session,
-                &format!("overlay stopped: {}", runtime.overlay_session),
-                &format!("overlay session not running: {}", runtime.overlay_session),
-            )
-            .await?;
-            if runtime.lock_screen_port != "0" {
-                tmux_kill_session_if_exists(
-                    &runtime.lock_screen_session,
-                    &format!("lock screen stopped: {}", runtime.lock_screen_session),
-                    &format!(
-                        "lock screen session not running: {}",
-                        runtime.lock_screen_session
-                    ),
-                )
-                .await?;
-            }
-            for session in &runtime.legacy_overlay_sessions {
-                if tmux_has_session(session).await {
-                    let status = Command::new("tmux")
-                        .arg("kill-session")
-                        .arg("-t")
-                        .arg(session)
-                        .status()
-                        .await?;
-                    if !status.success() {
-                        return Err(
-                            format!("failed to kill legacy overlay session: {session}").into()
-                        );
-                    }
-                    println!("legacy overlay session stopped: {session}");
-                }
-            }
+            stop_overlay_runtime(&runtime).await?;
             Ok(true)
         }
         VoiceCommandOperatorAction::StopAll => {
@@ -494,22 +1146,7 @@ async fn run_direct_voice_command_operator_action(
                 )
                 .await?;
             }
-            for session in &runtime.legacy_overlay_sessions {
-                if tmux_has_session(session).await {
-                    let status = Command::new("tmux")
-                        .arg("kill-session")
-                        .arg("-t")
-                        .arg(session)
-                        .status()
-                        .await?;
-                    if !status.success() {
-                        return Err(
-                            format!("failed to kill legacy overlay session: {session}").into()
-                        );
-                    }
-                    println!("legacy overlay session stopped: {session}");
-                }
-            }
+            stop_legacy_overlay_sessions(&runtime).await?;
             tmux_kill_session_if_exists(
                 &runtime.server_session,
                 &format!("server stopped: {}", runtime.server_session),
@@ -1000,5 +1637,157 @@ mod tests {
             voice_command_operator_attach_session(&VoiceCommandOperatorAction::LogsAgent, &runtime),
             None
         );
+    }
+
+    #[test]
+    fn extract_parec_source_from_args_reads_dash_d_value() {
+        assert_eq!(
+            extract_parec_source_from_args("parec -d alsa_input.usb --raw"),
+            Some("alsa_input.usb".to_string())
+        );
+        assert_eq!(
+            extract_parec_source_from_args("bash -lc parec -d not-matched"),
+            None
+        );
+        assert_eq!(extract_parec_source_from_args("parec --help"), None);
+    }
+
+    #[test]
+    fn render_voice_command_status_reports_running_services_and_warning() {
+        let snapshot = VoiceCommandStatusSnapshot {
+            stt_backend: "whisper".to_string(),
+            moonshine_model_size: "base".to_string(),
+            server_session: "server-x".to_string(),
+            server_url: "http://127.0.0.1:18080".to_string(),
+            server_model: "/models/ggml-small.bin".to_string(),
+            language: "ja".to_string(),
+            listener_session: "listener-x".to_string(),
+            agent_session: "agent-x".to_string(),
+            overlay_session: "overlay-x".to_string(),
+            lock_screen_session: "lock-x".to_string(),
+            overlay_ipc: "127.0.0.1:47832".to_string(),
+            lock_screen_ipc: "127.0.0.1:47833".to_string(),
+            listener_script: "/tmp/listener.py".to_string(),
+            agent_script: "/tmp/agent.py".to_string(),
+            mic_source: "alsa_input.usb".to_string(),
+            active_listener_source: Some("alsa_input.usb".to_string()),
+            active_agent_source: Some("alsa_input.usb".to_string()),
+            server_session_state: VoiceCommandServiceState::Running("server-x".to_string()),
+            listener_session_state: VoiceCommandServiceState::Running("listener-x".to_string()),
+            agent_session_state: VoiceCommandServiceState::Running("agent-x".to_string()),
+            overlay_session_state: VoiceCommandServiceState::Running("overlay-x".to_string()),
+            lock_screen_session_state: VoiceCommandServiceState::Running("lock-x".to_string()),
+            server_endpoint: VoiceCommandEndpointState::Ready(
+                "yes".to_string(),
+                "http://127.0.0.1:18080/".to_string(),
+            ),
+            overlay_endpoint: VoiceCommandEndpointState::Ready(
+                "yes".to_string(),
+                "127.0.0.1:47832".to_string(),
+            ),
+            lock_screen_endpoint: VoiceCommandEndpointState::Ready(
+                "yes".to_string(),
+                "127.0.0.1:47833".to_string(),
+            ),
+            contention_warning: true,
+        };
+
+        let rendered = render_voice_command_status(&snapshot);
+
+        assert!(rendered.contains("stt_backend=whisper"));
+        assert!(rendered.contains("active_listener_source=alsa_input.usb"));
+        assert!(rendered.contains("warning: listener+agent microphone contention likely"));
+        assert!(rendered.contains("server: RUNNING (server-x)"));
+        assert!(rendered.contains("ready: yes (http://127.0.0.1:18080/)"));
+    }
+
+    #[test]
+    fn render_voice_command_status_handles_disabled_overlay_and_moonshine() {
+        let snapshot = VoiceCommandStatusSnapshot {
+            stt_backend: "moonshine".to_string(),
+            moonshine_model_size: "tiny".to_string(),
+            server_session: "server-x".to_string(),
+            server_url: "http://127.0.0.1:18080".to_string(),
+            server_model: "/models/ggml-small.bin".to_string(),
+            language: "ja".to_string(),
+            listener_session: "listener-x".to_string(),
+            agent_session: "agent-x".to_string(),
+            overlay_session: "overlay-x".to_string(),
+            lock_screen_session: "lock-x".to_string(),
+            overlay_ipc: "127.0.0.1:47832".to_string(),
+            lock_screen_ipc: "127.0.0.1:0".to_string(),
+            listener_script: "/tmp/listener.py".to_string(),
+            agent_script: "/tmp/agent.py".to_string(),
+            mic_source: "<auto>".to_string(),
+            active_listener_source: None,
+            active_agent_source: None,
+            server_session_state: VoiceCommandServiceState::NotApplicable(
+                "moonshine backend — no whisper-server needed".to_string(),
+            ),
+            listener_session_state: VoiceCommandServiceState::Stopped("listener-x".to_string()),
+            agent_session_state: VoiceCommandServiceState::Stopped("agent-x".to_string()),
+            overlay_session_state: VoiceCommandServiceState::Stopped("overlay-x".to_string()),
+            lock_screen_session_state: VoiceCommandServiceState::Disabled("lock-x".to_string()),
+            server_endpoint: VoiceCommandEndpointState::NotApplicable(
+                "moonshine backend".to_string(),
+            ),
+            overlay_endpoint: VoiceCommandEndpointState::Disabled(
+                "WHISPER_AGENT_NO_OVERLAY=1".to_string(),
+            ),
+            lock_screen_endpoint: VoiceCommandEndpointState::Disabled(
+                "WHISPER_AGENT_NO_OVERLAY=1".to_string(),
+            ),
+            contention_warning: false,
+        };
+
+        let rendered = render_voice_command_status(&snapshot);
+
+        assert!(rendered.contains("moonshine_model_size=tiny"));
+        assert!(rendered.contains("server: N/A (moonshine backend — no whisper-server needed)"));
+        assert!(rendered.contains("disabled: yes (WHISPER_AGENT_NO_OVERLAY=1)"));
+        assert!(rendered.contains("lock-screen: DISABLED (lock-x)"));
+    }
+
+    #[test]
+    fn build_caption_overlay_start_command_exports_ipc_and_display() {
+        let runtime = resolve_voice_command_operator_runtime_config();
+        let runtime = crate::voice_command::VoiceCommandOperatorRuntimeConfig {
+            overlay_root: PathBuf::from("/tmp/acaption"),
+            overlay_host: "127.0.0.1".to_string(),
+            overlay_port: "47832".to_string(),
+            overlay_display: Some(":1".to_string()),
+            overlay_xauthority: Some("/tmp/xauth-overlay".to_string()),
+            ..runtime
+        };
+
+        let command = build_caption_overlay_start_command(&runtime);
+
+        assert!(command.contains("cd '/tmp/acaption'"));
+        assert!(command.contains("export DISPLAY=':1'"));
+        assert!(command.contains("export CAPTION_OVERLAY_IPC_PORT='47832'"));
+        assert!(command.contains("exec npm run start"));
+    }
+
+    #[test]
+    fn build_lock_screen_start_command_exports_credentials_and_port() {
+        let runtime = resolve_voice_command_operator_runtime_config();
+        let runtime = crate::voice_command::VoiceCommandOperatorRuntimeConfig {
+            lock_screen_root: PathBuf::from("/tmp/asec"),
+            lock_screen_port: "47833".to_string(),
+            lock_screen_display: Some(":1".to_string()),
+            lock_screen_xauthority: Some("/tmp/xauth-lock".to_string()),
+            biometric_password_file: Some(PathBuf::from("/tmp/password.enc")),
+            biometric_password_private_key: Some(PathBuf::from("/tmp/key.pem")),
+            biometric_unlock_signal_file: Some(PathBuf::from("/tmp/unlock.signal")),
+            ..runtime
+        };
+
+        let command = build_lock_screen_start_command(&runtime);
+
+        assert!(command.contains("cd '/tmp/asec'"));
+        assert!(command.contains("export ASEC_IPC_PORT='47833'"));
+        assert!(command.contains("export ASEC_DISPLAY=':1'"));
+        assert!(command.contains("export ASEC_BIOMETRIC_PASSWORD_FILE='/tmp/password.enc'"));
+        assert!(command.contains("exec npm run start:bridge -- --tcp-port 47833"));
     }
 }

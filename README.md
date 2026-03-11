@@ -310,9 +310,10 @@ yuiclaw voice-command operator stop-watch-mic
 ```
 
 This keeps the public operator surface moving into `yuiclaw` without rewriting the tmux compatibility backend prematurely.
-The current direct-backend slice handles `stop`, `stop-agent`, `stop-overlay`, `stop-all`,
-`watch-mic`, `stop-watch-mic`, `logs-*`, and `attach-*` from `yuiclaw` itself; the remaining
-actions still bridge through `tmp/whispercpp-listen/tmux_listen_only.sh`.
+The current direct-backend slice handles `status`, `start-overlay`, `restart-overlay`, `stop`,
+`stop-agent`, `stop-overlay`, `stop-all`, `watch-mic`, `stop-watch-mic`, `logs-*`, and
+`attach-*` from `yuiclaw` itself; the remaining start/restart actions still bridge through
+`tmp/whispercpp-listen/tmux_listen_only.sh`.
 
 ## Architecture
 
