@@ -2400,7 +2400,7 @@ mod tests {
             std::env::set_var("WHISPER_AGENT_BIOMETRIC_LOCK", "1");
             std::env::set_var("WHISPER_AGENT_BIOMETRIC_START_LOCKED", "1");
             std::env::set_var("WHISPER_AGENT_BIOMETRIC_COMMAND_IDLE_LOCK_SEC", "1800");
-            std::env::set_var("WHISPER_AGENT_BIOMETRIC_FACE_ABSENT_LOCK_SEC", "120");
+            std::env::set_var("WHISPER_AGENT_BIOMETRIC_FACE_ABSENT_LOCK_SEC", "900");
             std::env::set_var("WHISPER_AGENT_BIOMETRIC_UNLOCK_FACE_FRESH_MS", "1000");
             std::env::set_var("WHISPER_AGENT_BIOMETRIC_POLL_SEC", "5");
             std::env::set_var(
