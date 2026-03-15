@@ -11,6 +11,27 @@ Integrated entry point for the `a*` AI assistant stack.
 - **Tool-Agnostic**: Switch between Gemini, Claude, Codex, and OpenCode at runtime.
 - **Customizable Persona**: The AI assistant identity is configured in `~/.amem/agent/IDENTITY.md` — the bundled "YuiClaw" character is just a default.
 
+## `a*` Ecosystem
+
+`yuiclaw` is the public entry point for a broader `a*` module family. Some modules are always needed for the core interactive assistant, while others are optional runtime surfaces for voice, desktop, caption, lock-screen, or vision workflows.
+
+| Component | Role |
+|---|---|
+| [abeat](https://github.com/yuiseki/abeat) | Agentic Heartbeat — local-first periodic job runner |
+| [acaption](https://github.com/yuiseki/acaption) | Caption-only overlay surface for speech and notifications |
+| [acomm](https://github.com/yuiseki/acomm) | Communication hub — bridge, adapters, and TUI |
+| [acore](https://github.com/yuiseki/acore) | Agent core — stateful AI CLI orchestration |
+| [adesk](https://github.com/yuiseki/adesk) | Agentic desktop control module |
+| [ahear](https://github.com/yuiseki/ahear) | Agentic hearing — STT listeners, speaker auth, guest voice capture |
+| [amem](https://github.com/yuiseki/amem) | Agentic memory — Markdown-based local memory store |
+| [arouter](https://github.com/yuiseki/arouter) | Voice-command routing and execution orchestration |
+| [asay](https://github.com/yuiseki/asay) | Voice output helpers and VOICEVOX compatibility layer |
+| [asec](https://github.com/yuiseki/asec) | Lock-screen / security surface |
+| [asee](https://github.com/yuiseki/asee) | Agentic seeing — webcam backend and viewer surface |
+| [ashow](https://github.com/yuiseki/ashow) | Visual presentation / display-oriented module |
+
+Minimal interactive `yuiclaw` usage only requires the core stack (`amem`, `abeat`, `acomm`, `acore`). The other `a*` modules are activated as needed by the environment and configured workflows.
+
 ## Screenshots
 
 [![Image from Gyazo](https://i.gyazo.com/90c2c92c812ae79e2a223b11ca788049.png)](https://gyazo.com/90c2c92c812ae79e2a223b11ca788049)
